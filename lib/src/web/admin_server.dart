@@ -321,6 +321,23 @@ class AdminServer {
     return _json(<String, Object?>{'number': number, ..._state()});
   }
 
+  /// Restarts the appliance unit so flutter-pi picks up a new rotation. There
+  /// is nothing to do off the box -- a desktop run has no unit to restart, and
+  /// the failure is expected rather than worth reporting to the operator.
+  Future<void> _restartDisplay() async {
+    try {
+      final result = await Process.run('systemctl', <String>[
+        'restart',
+        'pesmarica',
+      ]);
+      if (result.exitCode != 0) {
+        debugPrint('pesmarica: display restart failed: ${result.stderr}');
+      }
+    } catch (e) {
+      debugPrint('pesmarica: could not restart the display: $e');
+    }
+  }
+
   Response _show(Request request, String number) {
     final ok = presenter.goToNumber(int.parse(number));
     return _json(<String, Object?>{'ok': ok, ..._state()});
@@ -339,6 +356,11 @@ class AdminServer {
     if (next.httpPort != previous.httpPort ||
         next.httpEnabled != previous.httpEnabled) {
       Future<void>.delayed(const Duration(milliseconds: 300), start);
+    }
+    // Rotation is a flutter-pi startup flag, so the display has to come back up
+    // to apply it. Answer first: the restart takes this server down with it.
+    if (next.rotation != previous.rotation) {
+      Future<void>.delayed(const Duration(milliseconds: 300), _restartDisplay);
     }
     return _json(_state());
   }

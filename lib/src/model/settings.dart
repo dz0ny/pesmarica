@@ -38,6 +38,7 @@ class Settings {
     this.baseScale = 1.0,
     this.showChrome = true,
     this.showTitle = true,
+    this.rotation = 0,
     this.httpPort = 8080,
     this.httpEnabled = true,
     this.password,
@@ -61,6 +62,12 @@ class Settings {
   /// with `showTitle:` in its own front matter.
   final bool showTitle;
 
+  /// How far the picture is turned on the panel, clockwise, in degrees. Only
+  /// 0/90/180/270 are meaningful. The display cannot apply this itself: it is
+  /// passed to flutter-pi at startup, so the appliance restarts the app when it
+  /// changes. On a desktop run it does nothing.
+  final int rotation;
+
   final int httpPort;
   final bool httpEnabled;
 
@@ -83,6 +90,7 @@ class Settings {
     double? baseScale,
     bool? showChrome,
     bool? showTitle,
+    int? rotation,
     int? httpPort,
     bool? httpEnabled,
     String? password,
@@ -95,6 +103,7 @@ class Settings {
     baseScale: baseScale ?? this.baseScale,
     showChrome: showChrome ?? this.showChrome,
     showTitle: showTitle ?? this.showTitle,
+    rotation: rotation ?? this.rotation,
     httpPort: httpPort ?? this.httpPort,
     httpEnabled: httpEnabled ?? this.httpEnabled,
     password: clearPassword ? null : (password ?? this.password),
@@ -109,6 +118,7 @@ class Settings {
     baseScale: baseScale,
     showChrome: showChrome,
     showTitle: showTitle,
+    rotation: rotation,
     httpPort: httpPort,
     httpEnabled: httpEnabled,
     passwordHash: passwordHash,
@@ -121,6 +131,7 @@ class Settings {
     'baseScale': baseScale,
     'showChrome': showChrome,
     'showTitle': showTitle,
+    'rotation': rotation,
     'httpPort': httpPort,
     'httpEnabled': httpEnabled,
     // `password` is intentionally never written back — see [password].
@@ -134,12 +145,20 @@ class Settings {
     baseScale: _double(json['baseScale'], 1.0).clamp(0.4, 4.0),
     showChrome: json['showChrome'] as bool? ?? true,
     showTitle: json['showTitle'] as bool? ?? true,
+    rotation: _rotation(json['rotation']),
     httpPort: _int(json['httpPort'], 8080),
     httpEnabled: json['httpEnabled'] as bool? ?? true,
     password: _text(json['password']),
     passwordHash: _text(json['passwordHash']),
     passwordSalt: _text(json['passwordSalt']),
   );
+
+  /// Anything that is not a right angle would leave the picture off the panel,
+  /// so an unusable value falls back to no rotation at all.
+  static int _rotation(Object? value) {
+    final degrees = _int(value, 0);
+    return const <int>[0, 90, 180, 270].contains(degrees) ? degrees : 0;
+  }
 
   static String? _text(Object? value) {
     final text = value is String ? value.trim() : null;

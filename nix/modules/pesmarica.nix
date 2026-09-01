@@ -25,12 +25,27 @@ let
   # own bundle.
   override = "/var/lib/pesmarica/bundle-override";
 
+  # flutter-pi takes the rotation as a startup flag, so it is read here rather
+  # than by the app: the web interface writes it into settings.json and restarts
+  # the unit. A panel mounted sideways is the normal case for signage.
   launch = pkgs.writeShellScript "pesmarica-launch" ''
+    settings=/var/lib/pesmarica/settings.json
+    rotation=0
+    if [ -r "$settings" ]; then
+      rotation=$(${pkgs.jq}/bin/jq -r '.rotation // 0' "$settings" 2>/dev/null || echo 0)
+    fi
+    case "$rotation" in
+      0|90|180|270) ;;
+      # Anything else would put the picture off the panel, and the box would
+      # look dead with no way in but ssh.
+      *) echo "pesmarica: ignoring rotation $rotation" >&2; rotation=0 ;;
+    esac
+
     if [ -d ${override} ]; then
       echo "pesmarica: running the override bundle from ${override}" >&2
-      exec ${lib.getExe flutter-pi} --release ${override}
+      exec ${lib.getExe flutter-pi} --release --rotation "$rotation" ${override}
     fi
-    exec ${lib.getExe flutter-pi} --release ${bundle}
+    exec ${lib.getExe flutter-pi} --release --rotation "$rotation" ${bundle}
   '';
 
   # The fallback access point. The web interface rewrites the copy on the data
@@ -206,6 +221,25 @@ in
     fsType = "tmpfs";
     options = [ "mode=0755" "size=8M" ];
   };
+
+  # NixOS activation rewrites the whole of /etc on every boot, which is the
+  # largest thing still touching the card once the logs are in RAM. Mounting
+  # /etc as an overlay of the store instead makes a boot write nothing: the
+  # generated files are already in the closure, and the writable layer is a
+  # tmpfs that goes away with the power.
+  boot.initrd.systemd.enable = true;
+  system.etc.overlay = {
+    enable = true;
+    mutable = false;
+  };
+  # An immutable /etc means /etc/passwd and /etc/shadow come from the closure,
+  # so accounts cannot be edited on the box -- useradd would have nowhere to
+  # write. For an appliance with one account that is the point.
+  users.mutableUsers = false;
+  # With /etc in the store, the accounts have to exist before anything mounts
+  # it: sysusers creates them from the closure at boot instead of an activation
+  # script editing /etc/passwd in place.
+  systemd.sysusers.enable = true;
 
   services.openssh = {
     enable = true;

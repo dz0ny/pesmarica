@@ -1,13 +1,149 @@
-# Pesmarica
+<h1 align="center">Pesmarica</h1>
 
-Digital signage for a songbook. Every page is one markdown file; the operator
-drives the screen with a keypad, a presenter remote or a phone on the same
-network. Built with Flutter, meant to run on a Raspberry Pi under
-[flutter-pi](https://github.com/ardera/flutter-pi).
+<p align="center">
+  Put the words on the wall, and let anyone in the room drive them.
+</p>
+
+<p align="center">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Raspberry%20Pi%20Zero%202%20W-C51A4A?logo=raspberrypi" />
+  <img alt="Built with" src="https://img.shields.io/badge/built%20with-Flutter-02569B?logo=flutter" />
+  <img alt="Appliance" src="https://img.shields.io/badge/appliance-NixOS-5277C3?logo=nixos" />
+  <img alt="Offline" src="https://img.shields.io/badge/network-offline%20by%20design-2F9E86" />
+</p>
+
+Pesmarica is digital signage for a songbook. Every page is one markdown file in
+one folder; the operator drives the screen with a keypad, a presenter remote, or
+a phone on the same network. It runs on a Raspberry Pi under
+[flutter-pi](https://github.com/ardera/flutter-pi), boots straight into the
+songbook, and brings its own wifi with it.
+
+**The songbook is the database.** Titles, magnification, and how often a page
+has been shown are written back into the page itself, so a songbook is a folder
+you can copy to another screen, edit over SSH, or keep in Git — and it will look
+and behave the same.
+
+## Why Pesmarica exists
+
+Rooms that need words on a wall — a parish hall, a school gym, a community
+centre — rarely have reliable wifi, an IT person, or anyone who wants to learn
+presentation software before a service starts. Pesmarica assumes the worst
+version of that room: no uplink, no internet, mains power that goes away without
+warning, and whoever happens to be free to run the screen that morning.
+
+So the box is the network rather than a guest on one, the content is plain
+markdown rather than a database, and the controls are the ones people already
+know from PowerPoint — type a number, press Enter.
+
+## Highlights
+
+- One markdown file per page, in one folder, with no other source of truth
+- Type a page number and press Enter, exactly like a slide deck
+- Works with a keypad, a presenter remote, a touch screen, or a phone
+- Its own wifi access point, configurable from the web interface
+- A management page for editing, reordering, and driving the screen remotely
+- Automatic type fitting, so one songbook reads correctly on 1080p and 4K
+- Four bundled fonts covering č/š/ž/ć/đ, nothing fetched at runtime
+- Optional password, hashed on first load and never stored in the clear
+- Survives losing mains power mid-write
+- An appliance image that defines the whole system in one place
+
+## Feature Overview
+
+| Area | What you get |
+|---|---|
+| Content | One markdown file per page; front matter the app reads and writes back |
+| Display | Automatic type fitting, per-page magnification, two-colour rendering |
+| Orientation | 90/180/270° rotation for panels mounted sideways |
+| Controls | Keypad, presenter remote, arrow keys, touch halves, or the web page |
+| Web interface | Edit as raw markdown, create and delete pages, drive the screen |
+| Import | Drop `.md` files onto the page list, or images into the editor |
+| Network | Always an access point; every name resolves to the box |
+| Recovery | A rejected access point config is replaced with the shipped default |
+| Security | One password, salted and hashed; cookie or `X-Pesmarica-Auth` header |
+| Appliance | NixOS image with the unit files, network, and paths defined once |
+| Durability | Atomic writes, and in steady state the SD card sees only songbook edits |
+
+## How It Works
+
+1. Flash the image and power the box on.
+2. It comes up as a wifi access point and shows the first page.
+3. Join that network from a phone or a laptop.
+4. Edit pages in the web interface, or over SSH, or by rsyncing a folder.
+5. The display picks up every change through a file watcher.
+
+There is no server to reach, no account to make, and nothing is fetched at
+runtime. Unplugging the box is a supported way to turn it off.
+
+## Built For
+
+- Anyone who needs words on a screen in a room without usable wifi
+- Operators who want PowerPoint's muscle memory and nothing else to learn
+- People who would rather edit a folder of markdown than use a content editor
+- Whoever inherits the box in three years and needs to understand it quickly
+
+## Requirements
+
+- A Raspberry Pi Zero 2 W and an SD card, for the appliance
+- Any HDMI screen
+- A keypad, presenter remote, or phone to drive it
+- For development: Flutter, and macOS or Linux
+- For building the image: Docker via [colima](https://github.com/abiosoft/colima),
+  and Flutter pinned to 3.44.x in `mise.toml` — `flutterpi_tool` compiles
+  against `flutter_tools` internals and does not build against anything newer
+
+## Install
+
+Build the appliance image and write it to a card:
+
+```bash
+cd nix && make image
+```
+
+```bash
+make flash DISK=/dev/rdisk4
+```
+
+See [nix/README.md](nix/README.md) for the prerequisites and what the image
+contains. Between reflashes, push a new build onto a running box:
+
+```bash
+HOST=root@pesmarica.local ./tool/deploy_pi.sh
+```
+
+That syncs the bundle to `/var/lib/pesmarica/bundle-override` and the songbook
+to `/var/lib/pesmarica` (without `--delete`, so pages created through the web
+interface survive), then restarts the unit. It installs nothing: changing the
+system means rebuilding the image.
+
+To run it on a desktop instead:
+
+```bash
+PESMARICA_CONTENT=$PWD/content flutter run -d macos   # or -d linux
+```
+
+`PESMARICA_CONTENT` picks the songbook folder; without it Pesmarica uses
+`./content` next to the working directory.
+
+## First Run
+
+1. Power the box on; the first page appears by itself.
+2. Connect a phone or laptop to the `Pesmarica` network (passphrase `pesmarica`).
+3. Most devices open the songbook by themselves; otherwise go to
+   `http://192.168.4.1` or `http://pesmarica.local`.
+4. Open **Omrežje** and change the network name and passphrase.
+5. Rejoin the new network, and put your own pages in.
+
+Out of the box the network is `Pesmarica` / `pesmarica` on channel 6 —
+**change both before it leaves your desk**. Saving restarts the radio and drops
+every connected device, including the one you changed it from.
+
+If a bad configuration ever does get written, the box does not become a brick:
+`ap-preflight` checks the file before hostapd starts and restores the shipped
+default if the name or passphrase could not work.
 
 ## The songbook is a folder
 
-```
+```text
 content/
   001-dobrodosli.md
   002-cebelica.md
@@ -80,24 +216,22 @@ there.
 
 So: power it on, connect a phone or laptop to its network, and the songbook's
 web interface is there. Every name resolves to the box, so most devices pop the
-sign-in sheet open on it by themselves; otherwise open `http://192.168.4.1` or
-`http://pesmarica.local`.
-
-Out of the box the network is `Pesmarica` / `pesmarica` on channel 6 —
-**change both before it leaves your desk**, under `Omrežje` in the web
-interface. Saving restarts the radio and drops every connected device,
-including the one you changed it from.
-
-If a bad configuration ever does get written, the box does not become a brick:
-`ap-preflight` checks the file before hostapd starts and restores the shipped
-default if the name or passphrase could not work.
+sign-in sheet open on it by themselves.
 
 ## Web interface
 
-The app serves a management page on port 8080 (`http://192.168.4.1:8080`,
-or `:8080` on whatever address you reach it at). It lists
-the pages, edits them as raw markdown, creates and deletes them, drives the
-display remotely, and sets the polarity, font and global magnification.
+The app serves a management page on port 8080 (`http://192.168.4.1:8080`, or
+`:8080` on whatever address you reach it at). It lists the pages, edits them as
+raw markdown, creates and deletes them, drives the display remotely, and sets
+the polarity, font and global magnification.
+
+### Rotation
+
+Signage panels are often mounted sideways, so **Zasuk** turns the picture 90,
+180 or 270° clockwise. The rotation is not something the app can apply to
+itself: it is a flutter-pi startup flag, so saving it restarts the display. The
+screen goes black for a moment and comes back turned; the web interface is not
+interrupted. Off the box -- a desktop run -- the setting is stored and ignored.
 
 Drag and drop:
 
@@ -142,6 +276,7 @@ safe to expose to the internet.
   "baseScale": 1.0,       // global multiplier on top of each page's scale
   "showChrome": true,     // the number/title strip along the bottom
   "showTitle": true,      // default for pages that do not set showTitle
+  "rotation": 0,          // 0 | 90 | 180 | 270, clockwise; restarts the display
   "httpPort": 8080,
   "httpEnabled": true,
 
@@ -164,49 +299,15 @@ nothing is fetched at runtime and nothing falls back to tofu on a bare Pi image:
 
 All are SIL Open Font License; the licences ship in `assets/fonts/`.
 
-## Running it
-
-Development, on a desktop:
-
-```bash
-PESMARICA_CONTENT=$PWD/content flutter run -d macos   # or -d linux
-```
-
-`PESMARICA_CONTENT` picks the songbook folder; without it Pesmarica uses
-`./content` next to the working directory.
-
-The web interface is served from `assets/web/` through the Flutter asset
-bundle, so editing `app.css`, `app.js` or `index.html` needs a restart (a hot
-restart is enough) to be picked up — there is no separate build step for it.
-
-Tests:
+## Development
 
 ```bash
 flutter test
 ```
 
-## Raspberry Pi
+The web interface is served from `assets/web/` through the Flutter asset bundle,
+so editing `app.css`, `app.js` or `index.html` needs a restart (a hot restart is
+enough) to be picked up — there is no separate build step for it.
 
-The appliance is a NixOS image, built in `nix/`. That image is the single
-definition of the system — the unit files, the access point, the network, the
-paths all live there and nowhere else:
-
-```bash
-cd nix && make image         # -> nix/out/sd-image/*.img.zst
-make flash DISK=/dev/rdisk4
-```
-
-See [nix/README.md](nix/README.md) for the prerequisites (Docker via colima, and
-Flutter pinned to 3.44.x in `mise.toml` — `flutterpi_tool` compiles against
-`flutter_tools` internals and does not build against anything newer).
-
-Between reflashes, push a new build onto a running box:
-
-```bash
-HOST=root@pesmarica.local ./tool/deploy_pi.sh
-```
-
-That syncs the bundle to `/var/lib/pesmarica/bundle-override` and the songbook to
-`/var/lib/pesmarica` (without `--delete`, so pages created through the web
-interface survive), then restarts the unit. It installs nothing: changing the
-system means rebuilding the image.
+See [CLAUDE.md](CLAUDE.md) for the layout of `lib/` and the handful of things
+that will bite you when changing the code.

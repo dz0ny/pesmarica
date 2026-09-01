@@ -73,6 +73,7 @@ function renderSettings() {
     $('font').replaceChildren(...state.fonts.map((f) => new Option(f.label, f.id)));
   }
   $('font').value = s.font || 'inter';
+  $('rotation').value = String(s.rotation ?? 0);
 }
 
 async function refresh() {
@@ -220,6 +221,15 @@ async function putSettings(patch) {
 $('theme').onchange = (e) => putSettings({ theme: e.target.value });
 $('font').onchange = (e) => putSettings({ font: e.target.value });
 $('baseScale').onchange = (e) => putSettings({ baseScale: Number(e.target.value) });
+// Rotation is handed to flutter-pi at startup, so the box restarts the display
+// to apply it. The screen goes black for a moment; this page is unaffected.
+$('rotation').onchange = (e) => {
+  if (!confirm('Zaslon se bo znova zagnal. Nadaljujem?')) {
+    e.target.value = String(state.settings.rotation ?? 0);
+    return;
+  }
+  putSettings({ rotation: Number(e.target.value) });
+};
 $('showTitle').onchange = (e) => putSettings({ showTitle: e.target.checked });
 
 // --- Drag and drop -------------------------------------------------------

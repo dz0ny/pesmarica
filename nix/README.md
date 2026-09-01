@@ -96,10 +96,18 @@ leases start fresh each boot. The root filesystem is mounted `noatime` with
 `commit=600`, which lets ext4 batch ten minutes of metadata rather than
 flushing every five seconds; a power cut then costs at most a view counter.
 
-The root filesystem is still mounted read-write. Making it genuinely read-only
-under NixOS means an overlay for `/etc` and `/var`, because activation rewrites
-`/etc` on every boot -- worth doing, but it is a change that can leave the box
-unbootable, so it should be tried with a card you can reflash.
+Activation used to be the largest remaining writer: NixOS rewrites the whole of
+`/etc` on every boot. It no longer does. `system.etc.overlay` mounts `/etc`
+from an erofs image in the store through a systemd stage-1 mount unit, with no
+writable layer at all, which is the same copy-on-write shape composefs gives
+you. `systemd.sysusers` then creates the accounts from that closure rather than
+editing `/etc/passwd` in place, so the `users`, `groups` and `var` activation
+scripts are empty and the `etc` one only runs on a configuration switch.
+
+The root filesystem is still mounted read-write, because the songbook has to
+land somewhere and it lives on it. Mounting the root read-only would mean a
+separate data partition for `/var/lib/pesmarica`, which the sd-image module does
+not produce -- worth doing, but it needs a card you can reflash while trying it.
 
 ## Known sharp edges
 
