@@ -175,6 +175,38 @@ in
   # Nothing dials out, so there is no clock to sync and nobody to sync with.
   services.timesyncd.enable = false;
 
+  # The SD card is the part that dies. Everything that writes continuously is
+  # moved to RAM, so that in steady state the only thing reaching the card is
+  # the songbook itself: the front matter the display stamps as pages are shown,
+  # and the access point config when someone changes it through the web UI.
+  services.journald = {
+    storage = "volatile";
+    extraConfig = ''
+      # 512 MB of RAM total, so the log in memory has to be bounded.
+      RuntimeMaxUse=16M
+    '';
+  };
+  boot.tmp.useTmpfs = true;
+
+  # noatime alone removes a write for every page the display reads. commit=600
+  # lets ext4 batch ten minutes of metadata instead of flushing every five
+  # seconds -- the box is a screen on a wall, and a power cut costs at most the
+  # view counter, which is the one thing here nobody would notice losing.
+  fileSystems."/".options = [ "noatime" "nodiratime" "commit=600" ];
+
+  # systemd's own state is disposable on an appliance: a fresh random seed and
+  # an empty lease file every boot cost nothing and keep the card idle.
+  fileSystems."/var/lib/systemd" = {
+    device = "tmpfs";
+    fsType = "tmpfs";
+    options = [ "mode=0755" "size=8M" ];
+  };
+  fileSystems."/var/log" = {
+    device = "tmpfs";
+    fsType = "tmpfs";
+    options = [ "mode=0755" "size=8M" ];
+  };
+
   services.openssh = {
     enable = true;
     settings.PermitRootLogin = "yes";

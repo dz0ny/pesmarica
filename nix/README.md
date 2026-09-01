@@ -84,7 +84,32 @@ HOST=root@192.168.4.1 ../tool/deploy_pi.sh
 
 Delete that directory on the box to go back to the image's own bundle.
 
+## Writes to the card
+
+The SD card is the part that dies, so in steady state the only thing that
+reaches it is the songbook: the front matter the display stamps as pages are
+shown, and `hostapd.conf` when someone changes the network in the web UI.
+
+Everything else is in RAM -- the journal (`Storage=volatile`, capped at 16M),
+`/tmp`, `/var/log`, and `/var/lib/systemd`, so the random seed and the DHCP
+leases start fresh each boot. The root filesystem is mounted `noatime` with
+`commit=600`, which lets ext4 batch ten minutes of metadata rather than
+flushing every five seconds; a power cut then costs at most a view counter.
+
+The root filesystem is still mounted read-write. Making it genuinely read-only
+under NixOS means an overlay for `/etc` and `/var`, because activation rewrites
+`/etc` on every boot -- worth doing, but it is a change that can leave the box
+unbootable, so it should be tried with a card you can reflash.
+
 ## Known sharp edges
+
+- **gcc segfaults inside the Nix build sandbox here**, and disabling the
+  sandbox only moves the failure: cc1 has died on a trivial `int main(){}` in
+  three different derivations (the kernel config step, flutter-pi, perl-env)
+  while the same compiler builds it fine outside a build. The colima VM is
+  allocated 12 GiB on a 16 GiB Mac, which is the first thing to suspect --
+  try `colima start --memory 8` before hunting further. Reruns resume from the
+  store, so a flaky build makes progress each time.
 
 - **raspberry-pi-nix is stale** — last pushed March 2025, which pins this to
   NixOS 24.11, and its `board` option only knows `bcm2711`/`bcm2712`. The Zero

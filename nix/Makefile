@@ -4,9 +4,8 @@
 #   make flash DISK=/dev/rdisk4
 #
 # Nix runs inside the colima VM: it is aarch64 Linux, so cache.nixos.org serves
-# prebuilt binaries for everything except flutter-pi, and raspberry-pi-nix's
-# cachix serves the Raspberry Pi kernel. Nothing is compiled locally that
-# somebody else has already built.
+# prebuilt binaries for all of userland. The Raspberry Pi kernel is NOT cached
+# despite what raspberry-pi-nix claims, so expect it to compile here.
 #
 # The Flutter bundle is still produced on macOS (scripts/build-bundle.sh): the
 # Dart AOT snapshotter only exists as an x86_64 binary.
@@ -21,12 +20,24 @@ STORE_VOL ?= pesmarica-nix-store
 export DOCKER_CONFIG := $(HERE)/.docker
 export DOCKER_HOST := unix://$(HOME)/.colima/default/docker.sock
 
+# gcc segfaults inside the Nix build sandbox here: cc1 dies on a trivial
+# `int main(){}` under the sandbox's seccomp filter, while the same compiler
+# builds it fine outside. It is aarch64-under-virtualization that breaks the
+# filter, not the toolchain -- both the kernel config step and flutter-pi's
+# CMake probe failed identically before this.
+#
+# The isolation the sandbox provides is worth less here than usual: this whole
+# thing already runs in a throwaway container whose only mounts are the store
+# and this directory.
+SANDBOX_OFF = --option sandbox false --option filter-syscalls false
+
 NIX_RUN = docker run --rm \
 	-v $(STORE_VOL):/nix \
 	-v $(HERE):/work \
 	-w /work \
 	$(NIX_IMAGE) \
 	nix --extra-experimental-features "nix-command flakes" \
+	    $(SANDBOX_OFF) \
 	    --extra-substituters "https://nix-community.cachix.org" \
 	    --extra-trusted-public-keys "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
 
