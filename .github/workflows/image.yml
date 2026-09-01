@@ -81,6 +81,21 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@v22
 
+      # The Pi kernel is in no public cache, so without this every run compiles
+      # it again. Pushing it to our own cache makes the second run onwards cheap
+      # -- and makes `nix build` on a laptop cheap too, if the cache is added as
+      # a substituter there.
+      #
+      # Needs a repository variable CACHIX_CACHE (the cache name) and a secret
+      # CACHIX_AUTH_TOKEN. A fork or a PR from one has neither; the step is
+      # skipped there rather than failing the run.
+      - uses: cachix/cachix-action@v17
+        if: vars.CACHIX_CACHE != ''
+        with:
+          name: ${{ vars.CACHIX_CACHE }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          extraPullNames: nix-community
+
       - name: Build
         working-directory: nix
         # `path:` rather than `.`: the flake sits inside a git repository, and a
@@ -95,6 +110,9 @@ jobs:
             --extra-substituters https://nix-community.cachix.org \
             --extra-trusted-public-keys nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= \
             --out-link result
+
+          # cachix-action pushes what the build produced when it is configured;
+          # this is the line that turns a 40 minute kernel into a download.
 
       - name: Compress
         working-directory: nix

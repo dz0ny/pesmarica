@@ -137,6 +137,16 @@ not produce -- worth doing, but it needs a card you can reflash while trying it.
   try `colima start --memory 8` before hunting further. Reruns resume from the
   store, so a flaky build makes progress each time.
 
+- **Nothing caches the kernel for you.** CI pushes its build to a Cachix cache
+  (repository variable `CACHIX_CACHE`, secret `CACHIX_AUTH_TOKEN`), which is
+  what keeps a run from compiling the kernel every time. Add that cache as a
+  substituter locally and `make image` gets the same benefit:
+
+  ```bash
+  nix build --extra-substituters https://<cache>.cachix.org \
+            --extra-trusted-public-keys <cache>.cachix.org-1:...
+  ```
+
 - **raspberry-pi-nix is stale** — last pushed March 2025, which pins this to
   NixOS 24.11, and its `board` option only knows `bcm2711`/`bcm2712`. The Zero
   2 W rides in as `bcm2711` (the same kernel config buildroot used) but is not a
