@@ -17,6 +17,8 @@ on:
   push:
     tags:
       - 'v*'
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -26,9 +28,9 @@ jobs:
     name: Flutter bundle (arm64 target, x86_64 host)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2.23.0
         with:
           # Not a preference: flutterpi_tool compiles against flutter_tools
           # internals and does not build against anything newer. Keep this in
@@ -54,7 +56,7 @@ jobs:
           # one from pkgs/flutter-pi.nix, linked against the image's libraries.
           rm -f out/bundle/flutter-pi out/bundle/.last_build_id
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: bundle
           path: out/bundle
@@ -65,10 +67,13 @@ jobs:
     needs: bundle
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 300
+    permissions:
+      # Only to attach the image to a release; everything else here reads.
+      contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: bundle
           path: nix/bundle
@@ -123,10 +128,19 @@ jobs:
           ls -lh "../out/$name.xz"
           sha256sum "../out/$name.xz" > "../out/$name.xz.sha256"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: sd-image
           path: out/*
           # Already xz; the artifact zip would only add a layer of nothing.
           compression-level: 0
           retention-days: 14
+
+      # A run artifact expires and needs a GitHub login to fetch. Someone
+      # flashing a card months from now wants neither, so a published release
+      # gets the image attached to it.
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" out/* --clobber
