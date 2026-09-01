@@ -22,7 +22,10 @@
     let
       system = "aarch64-linux";
 
-      appliance = extra: nixos-raspberrypi.lib.nixosSystemFull {
+      # nixosSystem, not nixosSystemFull: Full injects the Pi-optimised package
+      # overlays globally, which rebuilds userland this box never runs and costs
+      # the cache hits that made this upstream worth moving to.
+      appliance = extra: nixos-raspberrypi.lib.nixosSystem {
         specialArgs = inputs;
         modules = [
           ({ nixos-raspberrypi, ... }: {

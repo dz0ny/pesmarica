@@ -123,7 +123,16 @@ in
       params.cma-128 = { enable = true; };
     };
   };
-  hardware.enableRedistributableFirmware = true;
+  # linux-firmware is 1.85 GB unpacked -- firmware for every device Linux
+  # supports, on a board with one wifi chip that is soldered on. Something
+  # upstream turns it on, so it takes mkForce to turn back off.
+  #
+  # What replaces it is the Broadcom blob the radio actually needs. Getting this
+  # wrong means no access point, which is the only way into the box, so if a
+  # freshly flashed card comes up with no wifi this is the first line to suspect.
+  # The Pi's own GPU firmware is separate and comes from raspberry-pi-02.base.
+  hardware.enableRedistributableFirmware = lib.mkForce false;
+  hardware.firmware = [ pkgs.raspberrypiWirelessFirmware ];
 
   networking = {
     hostName = "pesmarica";
@@ -248,6 +257,16 @@ in
 
   documentation.enable = false;
   documentation.nixos.enable = false;
+
+  # An appliance with no keyboard and no shell user: everything below is weight
+  # on a card that has to hold a songbook, and none of it is reachable from the
+  # screen or the web interface.
+  environment.defaultPackages = lib.mkForce [ ];
+  programs.command-not-found.enable = false;
+  nix.channel.enable = false;
+  # Flutter carries its own text stack and the fonts are inside the bundle, so
+  # nothing on this box asks fontconfig anything.
+  fonts.fontconfig.enable = lib.mkForce false;
 
   # NixOS ships its own hostapd module, but it renders an immutable config into
   # the store. The web interface rewrites this config at runtime, so the unit is
