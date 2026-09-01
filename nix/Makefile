@@ -8,8 +8,8 @@
 # cachix serves the Raspberry Pi kernel. Nothing is compiled locally that
 # somebody else has already built.
 #
-# The Flutter bundle is still produced on macOS (../os/scripts/build-bundle.sh):
-# the Dart AOT snapshotter only exists as an x86_64 binary.
+# The Flutter bundle is still produced on macOS (scripts/build-bundle.sh): the
+# Dart AOT snapshotter only exists as an x86_64 binary.
 
 HERE      := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 NIX_IMAGE ?= nixos/nix:latest
@@ -41,7 +41,7 @@ image: bundle store
 
 # Stage the pieces the flake needs from outside its root.
 bundle:
-	$(HERE)/../os/scripts/build-bundle.sh
+	$(HERE)/scripts/build-bundle.sh
 	rm -rf $(HERE)/bundle $(HERE)/content
 	cp -R "$$(cat $(HERE)/../build/flutter-pi/.bundle-path)" $(HERE)/bundle
 	cp -R $(HERE)/../content $(HERE)/content

@@ -187,16 +187,16 @@ flutter test
 
 ## Raspberry Pi
 
-The appliance is a Buildroot image, built in `os/`. That image is the single
-definition of the system — the unit file, the partitions, the network, the
+The appliance is a NixOS image, built in `nix/`. That image is the single
+definition of the system — the unit files, the access point, the network, the
 paths all live there and nowhere else:
 
 ```bash
-cd os && make image          # -> os/out/sdcard.img
+cd nix && make image         # -> nix/out/sd-image/*.img.zst
 make flash DISK=/dev/rdisk4
 ```
 
-See [os/README.md](os/README.md) for the prerequisites (Docker via colima, and
+See [nix/README.md](nix/README.md) for the prerequisites (Docker via colima, and
 Flutter pinned to 3.44.x in `mise.toml` — `flutterpi_tool` compiles against
 `flutter_tools` internals and does not build against anything newer).
 
@@ -206,7 +206,7 @@ Between reflashes, push a new build onto a running box:
 HOST=root@pesmarica.local ./tool/deploy_pi.sh
 ```
 
-That syncs the bundle to `/opt/pesmarica/bundle` and the songbook to
+That syncs the bundle to `/var/lib/pesmarica/bundle-override` and the songbook to
 `/var/lib/pesmarica` (without `--delete`, so pages created through the web
 interface survive), then restarts the unit. It installs nothing: changing the
 system means rebuilding the image.

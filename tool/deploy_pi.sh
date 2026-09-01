@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Pushes a new build onto an appliance that is already running the image.
 #
-# This does NOT install anything: the system layout — the unit, the mount, the
-# paths — is defined once, by the image in `os/`. Reflashing is how you change
-# the system; this is how you change the app between reflashes.
+# This does NOT install anything: the system layout — the unit, the network, the
+# paths — is defined once, by the NixOS image in `nix/`. Rebuilding the image is
+# how you change the system; this is how you change the app between reflashes.
 #
 #   HOST=root@pesmarica.local ./tool/deploy_pi.sh
 #
@@ -13,15 +13,16 @@ set -euo pipefail
 
 HOST="${HOST:?set HOST=root@pesmarica.local}"
 
-# These mirror os/external/board/pesmarica/rootfs-overlay. If you change one,
-# change the image, not this script.
-BUNDLE_DIR="${BUNDLE_DIR:-/opt/pesmarica/bundle}"
+# The unit runs the bundle from the nix store, and falls back to this override
+# directory when it exists. Deleting it on the box goes back to the image's own
+# bundle. If you change these, change nix/modules/pesmarica.nix, not this script.
+BUNDLE_DIR="${BUNDLE_DIR:-/var/lib/pesmarica/bundle-override}"
 CONTENT_DIR="${CONTENT_DIR:-/var/lib/pesmarica}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-"$ROOT/os/scripts/build-bundle.sh"
+"$ROOT/nix/scripts/build-bundle.sh"
 BUNDLE="$(cat "$ROOT/build/flutter-pi/.bundle-path")"
 
 echo "==> $HOST:$BUNDLE_DIR"
