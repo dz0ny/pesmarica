@@ -41,7 +41,7 @@ know from PowerPoint — type a number, press Enter.
 - Type a page number and press Enter, exactly like a slide deck
 - Works with a keypad, a presenter remote, a touch screen, or a phone
 - Its own wifi access point, configurable from the web interface
-- A management page for editing, reordering, and driving the screen remotely
+- A management page with a formatting toolbar and a preview of the real layout
 - Automatic type fitting, so one songbook reads correctly on 1080p and 4K
 - Four bundled fonts covering č/š/ž/ć/đ, nothing fetched at runtime
 - Optional password, hashed on first load and never stored in the clear
@@ -56,7 +56,7 @@ know from PowerPoint — type a number, press Enter.
 | Display | Automatic type fitting, per-page magnification, two-colour rendering |
 | Orientation | 90/180/270° rotation for panels mounted sideways |
 | Controls | Keypad, presenter remote, arrow keys, touch halves, or the web page |
-| Web interface | Edit as raw markdown, create and delete pages, drive the screen |
+| Web interface | Formatting toolbar, live preview, create and delete pages, drive the screen |
 | Import | Drop `.md` files onto the page list, or images into the editor |
 | Network | Always an access point; every name resolves to the box |
 | Songbook storage | Its own exFAT partition — pull the card and edit on any laptop |
@@ -246,6 +246,19 @@ Signage panels are often mounted sideways, so **Zasuk** turns the picture 90,
 itself: it is a flutter-pi startup flag, so saving it restarts the display. The
 screen goes black for a moment and comes back turned; the web interface is not
 interrupted. Off the box -- a desktop run -- the setting is stored and ignored.
+
+### Writing tools
+
+A toolbar over the editor covers what a songbook page needs without knowing any
+markdown: **B**/*I* (also ⌘B / ⌘I), headings, a blockquote for the refrain, a
+bullet list, a verse break, and a file picker for images. Each button toggles,
+so pressing it again takes the markup off.
+
+**Predogled** (⌘P) renders the page as the screen will lay it out. It is a
+small renderer written into `app.js` rather than a markdown library, because
+the box is offline and this page has to work when nothing can be fetched --
+it covers headings, emphasis, blockquotes, lists, code and images, and nothing
+more.
 
 Drag and drop:
 

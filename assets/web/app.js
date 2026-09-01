@@ -82,6 +82,7 @@ async function open(number) {
   editing = number;
   dirty = false;
   $('source').value = page.source;
+  if (previewing) renderPreview();
   $('editing').textContent = page.number + ' · ' + page.file;
   say('Naloženo.');
   renderList();
@@ -101,6 +102,7 @@ $('save').onclick = save;
 $('source').oninput = () => { dirty = true; say('Neshranjeno …'); };
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') { e.preventDefault(); setPreview(!previewing); }
 });
 
 $('new').onclick = async () => {
@@ -191,6 +193,182 @@ async function importMarkdownFiles(files) {
     await open(last);
   }
 }
+
+// --- Editing tools ---------------------------------------------------------
+//
+// Enough markdown to write a hymn without knowing any: emphasis, headings, a
+// blockquote for the refrain, and a blank line between verses. Written by hand
+// rather than with an editor library, because the box is offline and a build
+// step for this page is one more thing to be broken on a Sunday morning.
+
+function edit(fn) {
+  // A tool used while the preview is up would change text nobody can see.
+  if (previewing) setPreview(false);
+  const area = $('source');
+  const start = area.selectionStart;
+  const end = area.selectionEnd;
+  fn(area, start, end);
+  dirty = true;
+  say('Neshranjeno …');
+  area.focus();
+}
+
+/// Puts `mark` on both sides of the selection, or takes it off again when it is
+/// already there, so the same button undoes itself.
+function wrap(mark) {
+  edit((area, start, end) => {
+    const selected = area.value.slice(start, end);
+    const before = area.value.slice(0, start);
+    const after = area.value.slice(end);
+    const already = before.endsWith(mark) && after.startsWith(mark);
+
+    if (already) {
+      area.value = before.slice(0, -mark.length) + selected + after.slice(mark.length);
+      area.setSelectionRange(start - mark.length, end - mark.length);
+    } else {
+      area.value = before + mark + selected + mark + after;
+      area.setSelectionRange(start + mark.length, end + mark.length);
+    }
+  });
+}
+
+/// Prefixes every line the selection touches, and removes the prefix when all
+/// of them already carry it.
+function prefixLines(mark) {
+  edit((area, start, end) => {
+    const from = area.value.lastIndexOf('\n', start - 1) + 1;
+    const to = area.value.indexOf('\n', end);
+    const stop = to === -1 ? area.value.length : to;
+    const lines = area.value.slice(from, stop).split('\n');
+    const has = lines.every((line) => line.startsWith(mark));
+    const next = lines
+      .map((line) => (has ? line.slice(mark.length) : mark + line))
+      .join('\n');
+    area.value = area.value.slice(0, from) + next + area.value.slice(stop);
+    area.setSelectionRange(from, from + next.length);
+  });
+}
+
+/// A blank line is what separates verses on screen, and the thing operators
+/// most often forget.
+function verseBreak() {
+  edit((area, start) => {
+    area.value = area.value.slice(0, start) + '\n\n' + area.value.slice(start);
+    area.setSelectionRange(start + 2, start + 2);
+  });
+}
+
+for (const button of document.querySelectorAll('#tools [data-wrap]')) {
+  button.onclick = () => wrap(button.dataset.wrap);
+}
+for (const button of document.querySelectorAll('#tools [data-line]')) {
+  button.onclick = () => prefixLines(button.dataset.line);
+}
+$('verse').onclick = verseBreak;
+
+// Drag and drop is not obvious, and is awkward from a phone.
+$('pickImage').onclick = () => $('imageFile').click();
+$('imageFile').onchange = async (e) => {
+  await insertImages(Array.from(e.target.files));
+  e.target.value = '';
+};
+
+$('source').addEventListener('keydown', (e) => {
+  if (!(e.metaKey || e.ctrlKey)) return;
+  const key = e.key.toLowerCase();
+  if (key === 'b') { e.preventDefault(); wrap('**'); }
+  if (key === 'i') { e.preventDefault(); wrap('*'); }
+});
+
+// --- Preview ---------------------------------------------------------------
+//
+// A small renderer rather than a markdown library, for the same reason there is
+// no build step: the box is offline and this page has to keep working when
+// nothing can be fetched. It covers what a songbook page uses and nothing else.
+//
+// It follows the display, which does NOT break single newlines -- a stanza is
+// one flowing paragraph on screen, so it is one here too. If that ever changes
+// in page_view.dart, change it here as well or the preview starts lying.
+
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/// Emphasis, code and images, applied to already-escaped text. Images are
+/// rewritten to the /media route the box serves them from; anything that is not
+/// a plain relative file name is left as text rather than turned into a tag.
+function inline(text) {
+  return text
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (whole, alt, src) => {
+      const name = src.replace(/^images\//, '');
+      if (!/^[A-Za-z0-9._-]+$/.test(name)) return whole;
+      return '<img src="/media/' + encodeURIComponent(name) + '" alt="' + alt + '">';
+    })
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+}
+
+function renderMarkdown(source) {
+  const blocks = escapeHtml(source).split(/\n\s*\n/);
+  const html = [];
+
+  for (const raw of blocks) {
+    const block = raw.replace(/^\n+|\n+$/g, '');
+    if (!block.trim()) continue;
+    const lines = block.split('\n');
+
+    const heading = block.match(/^(#{1,3})\s+(.*)$/);
+    if (heading && lines.length === 1) {
+      const level = heading[1].length;
+      html.push('<h' + level + '>' + inline(heading[2]) + '</h' + level + '>');
+      continue;
+    }
+
+    if (lines.every((line) => /^\s*[-*]\s+/.test(line))) {
+      const items = lines.map((line) => '<li>' + inline(line.replace(/^\s*[-*]\s+/, '')) + '</li>');
+      html.push('<ul>' + items.join('') + '</ul>');
+      continue;
+    }
+
+    if (lines.every((line) => /^\s*&gt;\s?/.test(line))) {
+      const text = lines.map((line) => line.replace(/^\s*&gt;\s?/, '')).join(' ');
+      html.push('<blockquote>' + inline(text) + '</blockquote>');
+      continue;
+    }
+
+    // Single newlines collapse, exactly as the display treats them.
+    html.push('<p>' + inline(lines.join(' ')) + '</p>');
+  }
+
+  return html.join('\n');
+}
+
+let previewing = false;
+
+function renderPreview() {
+  const source = $('source').value;
+  // The title lives in the front matter and is drawn by the chrome, not by the
+  // page body, so the preview shows the body the same way the screen does.
+  const body = source.replace(/^---\n[\s\S]*?\n---\n?/, '');
+  $('preview').innerHTML = body.trim()
+    ? renderMarkdown(body)
+    : '<p class="empty">Prazna stran.</p>';
+}
+
+function setPreview(on) {
+  previewing = on;
+  $('preview').hidden = !on;
+  $('source').hidden = on;
+  $('togglePreview').classList.toggle('on', on);
+  if (on) renderPreview();
+}
+
+$('togglePreview').onclick = () => setPreview(!previewing);
 
 async function insertImages(files) {
   const wanted = files.filter(isImage);

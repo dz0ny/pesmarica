@@ -40,7 +40,23 @@
       <button id="delete" class="danger">Izbriši</button>
       <span class="hint">Sliko povleci sem</span>
     </div>
+    <div id="tools">
+      <button data-wrap="**" title="Krepko (⌘B)"><b>B</b></button>
+      <button data-wrap="*" title="Ležeče (⌘I)"><i>I</i></button>
+      <span class="sep"></span>
+      <button data-line="# " title="Naslov">H1</button>
+      <button data-line="## " title="Podnaslov">H2</button>
+      <button data-line="> " title="Zbor ali refren">&rdquo;</button>
+      <button data-line="- " title="Seznam">&bull;</button>
+      <span class="sep"></span>
+      <button id="verse" title="Prelom kitice">Kitica</button>
+      <button id="pickImage" title="Vstavi sliko">Slika</button>
+      <span class="grow"></span>
+      <button id="togglePreview" title="Predogled (⌘P)">Predogled</button>
+    </div>
     <textarea id="source" spellcheck="false" placeholder="# Naslov pesmi&#10;&#10;Prva kitica ..."></textarea>
+    <div id="preview" hidden></div>
+    <input id="imageFile" type="file" accept="image/*" multiple hidden>
     <div id="status">Izberi stran na levi.</div>
   </div>
 </main>

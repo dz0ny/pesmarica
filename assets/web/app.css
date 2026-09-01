@@ -48,6 +48,26 @@ textarea {
 #status { color: var(--muted); font-size: 13px; padding: 8px 14px; border-top: 1px solid var(--line); }
 #status.error { color: var(--danger); }
 .hint { color: var(--muted); font-size: 12px; }
+
+/* The toolbar is for people who know the song but not the punctuation that
+   makes markdown work. */
+#tools { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+#tools button { min-width: 2.2em; padding: 4px 8px; font-size: 13px; }
+#tools .sep { width: 1px; align-self: stretch; margin: 2px 6px; background: var(--line); }
+#tools button.on { border-color: var(--accent); color: var(--accent); }
+
+/* Close to what the screen does, not a copy of it: same shapes and rhythm, the
+   browser's own font. The display is the authority. */
+#preview { flex: 1; overflow: auto; padding: 18px 22px; line-height: 1.45; }
+#preview h1 { font-size: 1.6em; margin: 0 0 .5em; }
+#preview h2 { font-size: 1.3em; margin: 1em 0 .4em; }
+#preview h3 { font-size: 1.15em; margin: .9em 0 .3em; }
+#preview p { margin: 0 0 .9em; }
+#preview blockquote { margin: 0 0 .9em; padding-left: .8em; border-left: 2px solid var(--line); color: var(--muted); font-style: italic; }
+#preview ul { margin: 0 0 .9em; padding-left: 1.2em; }
+#preview img { max-width: 100%; }
+#preview code { font-family: ui-monospace, monospace; font-size: .9em; }
+#preview .empty { color: var(--muted); }
 .dropping { outline: 2px dashed var(--accent); outline-offset: -6px; background: #1d2117; }
 #drophint {
   display: none; position: fixed; inset: auto 0 0 0; padding: 10px 16px;
