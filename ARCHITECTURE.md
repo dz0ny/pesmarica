@@ -194,6 +194,33 @@ fixing it.
 otherwise files the page after the last one rather than refusing. Someone
 dropping a folder of songs should not have to resolve collisions one at a time.
 
+### The network
+
+The appliance is an access point, never a client. `hostapd` owns the radio,
+`systemd-networkd` owns the static `192.168.4.1/24` and hands out leases, and
+`dnsmasq` answers every name with that address. The wildcard DNS is what makes
+a phone open the captive-portal sheet on the songbook rather than reporting no
+internet; the server plays along by redirecting the probe URLs the various
+platforms fetch (`/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, …) and
+any other unrouted GET.
+
+`hostapd.conf` on the data partition is the source of truth for the AP — not a
+rendering of something in `settings.json`, so there is nothing to drift out of
+sync and a hand-edit over the serial console is as valid as a change made from
+a phone. `AccessPointFile` rewrites only the keys it owns and passes every
+other directive through, so the radio tuning in the shipped default survives a
+passphrase change made on a phone.
+
+Losing the access point means losing the only way in, so a bad config is
+guarded twice: `AccessPoint.problem` refuses to write anything hostapd would
+reject, and `ap-preflight` re-checks the file at boot and restores the shipped
+default if it cannot work. The write itself is a rename, like every other write
+in this project.
+
+Changing the AP disconnects whoever changed it. The handler therefore answers
+the request first and restarts hostapd a second later, so the browser gets to
+see which network to rejoin.
+
 ### Auth
 
 One password, no user name, no session store.
@@ -231,3 +258,11 @@ typing the address of a protected page just works.
   transfer is a folder, which `git`, `rsync` and Syncthing already handle.
 - **No scheduling or playlists.** This is a songbook an operator drives, not a
   slideshow. Autoplay would be a different product.
+- **No wifi client mode, ever.** No `wpa_supplicant` in the image, so there are
+  no credentials on the box to leak and no uplink to wait for at boot. It also
+  means no NTP, no remote access from outside the room, and no updates that are
+  not carried in by hand — which for an appliance in a hall is the point.
+- **One place defines the system.** The image in `os/` owns the unit, the
+  partitions and the paths; `tool/deploy_pi.sh` only pushes a new build onto a
+  box that already runs it. There is deliberately no second installer that
+  could disagree with the image.

@@ -52,6 +52,7 @@ lib/
   src/web/admin_server.dart  shelf routes, cookie auth
   src/web/static_assets.dart serves assets/web/ from the Flutter bundle
   src/web/credentials.dart   salt, hash, constant-time compare
+  src/net/access_point.dart  read/rewrite hostapd.conf, restart the radio
 assets/web/                  the admin UI: html, css, js, favicon
 ```
 
@@ -95,6 +96,15 @@ which sets `fontVariations` alongside `fontWeight`.
 show up, and a new file must be added to both `StaticAssets.allowed` and the
 `assets:` list in `pubspec.yaml` or it will 404.
 
+**The access point is the only way into the box.** `hostapd.conf` on the data
+partition is the source of truth — do not add a copy of the SSID to
+`settings.json`. Anything that writes it must go through
+`AccessPoint.problem` first; a config hostapd rejects is a brick, recoverable
+only by the `ap-preflight` fallback in the image or a serial console. Changing
+it disconnects the caller, so answer the request before restarting hostapd.
+Set `PESMARICA_HOSTAPD_CONF` to work on it off-device; without it, the file
+does not exist and the network panel hides itself.
+
 **Never write a password anywhere.** `Songbook._adoptPassword` hashes a
 plaintext `password:` out of `settings.json` on load and rewrites the file
 without it. Anything new that touches settings must not reintroduce the
@@ -119,6 +129,17 @@ a stale size.
   one dependency-free HTML string, because the box is often offline and a build
   step for the admin UI is one more thing to be broken on a Sunday morning.
 - Comments explain why, not what. Match the density already in the files.
+
+## The appliance
+
+`os/` is a Buildroot external tree and the single definition of the system: the
+unit, the partitions, the network, the paths. `tool/deploy_pi.sh` only pushes a
+build onto a box that already runs the image — if you find yourself wanting to
+install a unit from the repo, change the image instead.
+
+The image cannot be built or booted from a test run here; it needs Docker and
+a real Zero 2 W. Treat changes under `os/` as unverified until someone flashes
+a card, and say so.
 
 ## Testing
 

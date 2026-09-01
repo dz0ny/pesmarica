@@ -71,9 +71,31 @@ Digits and `+`/`−` are matched on the character produced, not the physical key
 so a Slovenian layout, a numeric keypad and a cheap presenter remote all behave
 the same. Tapping the right or left half of a touch screen also pages.
 
+## The box is the network
+
+The appliance is always a wifi access point and never a client. It does not join
+your wifi — there usually isn't any in the rooms this ends up in, and a screen
+that waits for an uplink is a screen that stays blank when the uplink is not
+there.
+
+So: power it on, connect a phone or laptop to its network, and the songbook's
+web interface is there. Every name resolves to the box, so most devices pop the
+sign-in sheet open on it by themselves; otherwise open `http://192.168.4.1` or
+`http://pesmarica.local`.
+
+Out of the box the network is `Pesmarica` / `pesmarica` on channel 6 —
+**change both before it leaves your desk**, under `Omrežje` in the web
+interface. Saving restarts the radio and drops every connected device,
+including the one you changed it from.
+
+If a bad configuration ever does get written, the box does not become a brick:
+`ap-preflight` checks the file before hostapd starts and restores the shipped
+default if the name or passphrase could not work.
+
 ## Web interface
 
-The app serves a management page on port 8080 (`http://<pi-ip>:8080`). It lists
+The app serves a management page on port 8080 (`http://192.168.4.1:8080`,
+or `:8080` on whatever address you reach it at). It lists
 the pages, edits them as raw markdown, creates and deletes them, drives the
 display remotely, and sets the polarity, font and global magnification.
 
@@ -165,20 +187,26 @@ flutter test
 
 ## Raspberry Pi
 
-flutter-pi does not run `flutter build linux` output — it needs the asset bundle
-plus an AOT snapshot cross-compiled for the Pi. `flutterpi_tool` does that from
-an ordinary Flutter SDK:
+The appliance is a Buildroot image, built in `os/`. That image is the single
+definition of the system — the unit file, the partitions, the network, the
+paths all live there and nowhere else:
 
 ```bash
-./tool/build_pi.sh                       # ARCH=arm64 CPU=pi4 MODE=release
-HOST=pi@signage.local ./tool/deploy_pi.sh
+cd os && make image          # -> os/out/sdcard.img
+make flash DISK=/dev/rdisk4
 ```
 
-`deploy_pi.sh` copies the bundle to `/opt/pesmarica/bundle`, the songbook to
-`/var/lib/pesmarica`, and installs `packaging/pesmarica.service`. The unit runs
-flutter-pi against KMS/DRM on tty1 with `Restart=always`, so the screen comes
-back on its own after a power cut. The songbook is synced without `--delete` —
-pages created on the Pi through the web interface survive a redeploy.
+See [os/README.md](os/README.md) for the prerequisites (Docker via colima, and
+Flutter pinned to 3.44.x in `mise.toml` — `flutterpi_tool` compiles against
+`flutter_tools` internals and does not build against anything newer).
 
-Install flutter-pi itself on the Pi following its own README; Pesmarica only
-needs the `flutter-pi` binary on `PATH`.
+Between reflashes, push a new build onto a running box:
+
+```bash
+HOST=root@pesmarica.local ./tool/deploy_pi.sh
+```
+
+That syncs the bundle to `/opt/pesmarica/bundle` and the songbook to
+`/var/lib/pesmarica` (without `--delete`, so pages created through the web
+interface survive), then restarts the unit. It installs nothing: changing the
+system means rebuilding the image.

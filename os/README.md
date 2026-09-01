@@ -32,8 +32,16 @@ softwareupdate --install-rosetta   # only if not already installed
 mise install                       # Flutter 3.44.4, pinned in ../mise.toml
 ```
 
-Then set the wifi credentials in
-`external/board/pesmarica/rootfs-overlay/etc/wpa_supplicant/wpa_supplicant-wlan0.conf`.
+The box is its own access point and never joins a network, so there are no wifi
+credentials to fill in. The default network is `Pesmarica` / `pesmarica` on
+channel 6, defined in
+`external/board/pesmarica/rootfs-overlay/usr/share/pesmarica/hostapd.conf`;
+change the passphrase there, or from the web interface once it is running.
+
+That file is only the fallback. The live config is
+`/var/lib/pesmarica/hostapd.conf` on the data partition, seeded from it on
+first boot and rewritten by the web interface. `ap-preflight` restores the
+fallback if the live one is unusable, so a bad passphrase cannot lock you out.
 
 ## Build
 

@@ -8,6 +8,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 
 import '../data/presenter.dart';
+import '../net/access_point.dart';
 import '../data/songbook.dart';
 import '../model/settings.dart';
 import 'credentials.dart';
@@ -25,6 +26,7 @@ class AdminServer {
   final Presenter presenter;
 
   final StaticAssets _assets = StaticAssets();
+  final AccessPointFile _accessPoint = AccessPointFile.fromEnvironment();
 
   HttpServer? _server;
 
@@ -167,9 +169,22 @@ class AdminServer {
       return _json(_state());
     })
     ..put('/api/settings', _putSettings)
+    ..get('/api/network', _getNetwork)
+    ..put('/api/network', _putNetwork)
     ..post('/api/images', _uploadImage)
     ..get('/media/<name|[^/]+>', _media)
-    ..all('/<ignored|.*>', (Request r) => Response.notFound('Ni najdeno.\n'));
+    // What phones and laptops fetch to decide whether a network is usable.
+    // Answering with a redirect is what makes the sign-in sheet pop open on the
+    // songbook instead of the device declaring "no internet" and giving up.
+    ..get('/generate_204', _portalProbe)
+    ..get('/gen_204', _portalProbe)
+    ..get('/hotspot-detect.html', _portalProbe)
+    ..get('/library/test/success.html', _portalProbe)
+    ..get('/ncsi.txt', _portalProbe)
+    ..get('/connecttest.txt', _portalProbe)
+    ..get('/canonical.html', _portalProbe)
+    ..get('/success.txt', _portalProbe)
+    ..all('/<ignored|.*>', _fallback);
 
   Future<Response> _page(String name) async => Response.ok(
     await _assets.readString(name),
@@ -373,6 +388,78 @@ class AdminServer {
       default:
         return 'application/octet-stream';
     }
+  }
+
+  Response _portalProbe(Request request) => Response.found(_portalTarget(request));
+
+  /// An unknown path is far more likely to be a device probing the network than
+  /// a real 404, because every name on this network resolves here. Send GETs
+  /// that would render to the songbook and keep honest 404s for the API.
+  Response _fallback(Request request) {
+    if (request.method == 'GET' && !request.url.path.startsWith('api/')) {
+      return Response.found(_portalTarget(request));
+    }
+    return Response.notFound('Ni najdeno.\n');
+  }
+
+  String _portalTarget(Request request) {
+    final host = request.headers['host'];
+    return host == null ? '/' : 'http://$host/';
+  }
+
+  Response _getNetwork(Request request) {
+    final access = _accessPoint.read();
+    return _json(<String, Object?>{
+      'available': access != null,
+      if (access != null) 'accessPoint': access.toJson(),
+    });
+  }
+
+  /// Changing the access point drops every connected device, including the one
+  /// asking. So: validate, write, answer, and only then restart the radio.
+  Future<Response> _putNetwork(Request request) async {
+    final current = _accessPoint.read();
+    if (current == null) {
+      return _json(
+        <String, Object?>{'error': 'Ta naprava ni dostopna točka.'},
+        status: 404,
+      );
+    }
+
+    final body = await _readJson(request);
+    final passphrase = body['passphrase'] as String?;
+    final open = body['open'] == true;
+
+    final updated = current.copyWith(
+      ssid: (body['ssid'] as String?)?.trim(),
+      // An omitted passphrase means "leave it alone", not "make it open".
+      passphrase: open || passphrase == null || passphrase.isEmpty
+          ? null
+          : passphrase,
+      makeOpen: open,
+      channel: (body['channel'] as num?)?.toInt(),
+      countryCode: (body['countryCode'] as String?)?.trim().toUpperCase(),
+      hidden: body['hidden'] as bool?,
+    );
+
+    final problem = updated.problem;
+    if (problem != null) {
+      return _json(<String, Object?>{'error': problem}, status: 400);
+    }
+
+    try {
+      await _accessPoint.write(updated);
+    } on Object catch (e) {
+      return _json(<String, Object?>{'error': '$e'}, status: 500);
+    }
+
+    // Long enough for this response to reach the browser before the radio goes.
+    Future<void>.delayed(const Duration(seconds: 1), _accessPoint.restart);
+
+    return _json(<String, Object?>{
+      'accessPoint': updated.toJson(),
+      'restarting': true,
+    });
   }
 
   Future<Map<String, Object?>> _readJson(Request request) async {

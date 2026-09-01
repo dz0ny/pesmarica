@@ -12,9 +12,20 @@ function api(path, options = {}) {
       location.href = '/login?next=' + encodeURIComponent(location.pathname);
       throw new Error('Prijava je potekla.');
     }
-    if (!r.ok) throw new Error((await r.text()).trim() || r.statusText);
+    if (!r.ok) throw new Error(await readError(r));
     return r.status === 204 ? null : r.json();
   });
+}
+
+// Errors arrive either as a JSON {error} or as plain text; the operator should
+// see the sentence either way, never the envelope around it.
+async function readError(response) {
+  const text = (await response.text()).trim();
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.error === 'string') return parsed.error;
+  } catch (_) { /* plain text */ }
+  return text || response.statusText;
 }
 
 function say(message, isError) {
@@ -141,6 +152,62 @@ $('show').onclick = async () => {
 $('prev').onclick = async () => { state = await api('/api/prev', { method: 'POST' }); renderList(); };
 $('next').onclick = async () => { state = await api('/api/next', { method: 'POST' }); renderList(); };
 
+// --- The box's own wifi ---------------------------------------------------
+
+let accessPoint = null;
+
+async function loadNetwork() {
+  const info = await api('/api/network');
+  accessPoint = info.available ? info.accessPoint : null;
+  $('network').hidden = !accessPoint;
+}
+
+$('network').onclick = async () => {
+  await loadNetwork();
+  if (!accessPoint) return;
+  $('apSsid').value = accessPoint.ssid;
+  $('apPassphrase').value = '';
+  $('apPassphrase').placeholder = accessPoint.protected
+    ? 'pusti prazno, da ostane nespremenjeno'
+    : 'trenutno odprto omrežje';
+  $('apOpen').checked = !accessPoint.protected;
+  $('apChannel').value = accessPoint.channel;
+  $('apHidden').checked = accessPoint.hidden;
+  $('apError').hidden = true;
+  $('networkDialog').showModal();
+};
+
+// An open network needs no passphrase, so stop asking for one.
+$('apOpen').onchange = (e) => { $('apPassphrase').disabled = e.target.checked; };
+
+$('networkForm').addEventListener('submit', async (event) => {
+  if (event.submitter && event.submitter.value !== 'save') return;
+  event.preventDefault();
+  $('apError').hidden = true;
+
+  const body = {
+    ssid: $('apSsid').value,
+    open: $('apOpen').checked,
+    channel: Number($('apChannel').value),
+    hidden: $('apHidden').checked,
+  };
+  if (!body.open && $('apPassphrase').value) body.passphrase = $('apPassphrase').value;
+
+  try {
+    const result = await api('/api/network', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    accessPoint = result.accessPoint;
+    $('networkDialog').close();
+    say('Wifi se ponovno zaganja — poveži se z omrežjem "' + accessPoint.ssid + '".');
+  } catch (e) {
+    $('apError').textContent = e.message;
+    $('apError').hidden = false;
+  }
+});
+
 async function putSettings(patch) {
   state = await api('/api/settings', {
     method: 'PUT',
@@ -242,4 +309,5 @@ dropZone($('editor'), (files) =>
     : insertImages(files));
 
 refresh().catch((e) => say(e.message, true));
+loadNetwork().catch(() => {});
 setInterval(() => { if (!dirty) refresh().catch(() => {}); }, 4000);

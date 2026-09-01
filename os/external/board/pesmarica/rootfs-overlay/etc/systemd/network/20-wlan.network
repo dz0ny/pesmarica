@@ -2,8 +2,21 @@
 Name=wlan0
 
 [Network]
-DHCP=yes
+# The appliance is the network. It never joins one: there is no wifi to join in
+# most of the rooms this ends up in, and a box that waits for an uplink is a box
+# that shows a blank screen when the uplink is not there.
+Address=192.168.4.1/24
 MulticastDNS=yes
+IPMasquerade=no
+IPForward=no
 
-[DHCPv4]
-RouteMetric=20
+# Handing out leases here rather than from dnsmasq keeps the two responsibilities
+# apart: networkd owns addresses, dnsmasq only answers names.
+DHCPServer=yes
+
+[DHCPServer]
+PoolOffset=10
+PoolSize=40
+EmitDNS=yes
+DNS=192.168.4.1
+EmitRouter=no

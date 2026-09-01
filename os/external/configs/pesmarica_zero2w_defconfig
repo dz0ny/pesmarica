@@ -55,15 +55,18 @@ BR2_PACKAGE_MESA3D_OPENGL_ES=y
 # The app
 BR2_PACKAGE_FLUTTERPI=y
 
-# Wifi (the Zero 2 W has no ethernet)
-BR2_PACKAGE_WPA_SUPPLICANT=y
-BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y
-BR2_PACKAGE_WPA_SUPPLICANT_CLI=y
+# Wifi. The Zero 2 W has no ethernet, and this box is always the access point:
+# people connect *to* it to reach the web interface. It never joins a network,
+# so there is no wpa_supplicant here and no credentials to leak.
+BR2_PACKAGE_HOSTAPD=y
+BR2_PACKAGE_HOSTAPD_DRIVER_NL80211=y
+BR2_PACKAGE_HOSTAPD_WPA3=y
+BR2_PACKAGE_DNSMASQ=y
 BR2_PACKAGE_BRCMFMAC_SDIO_FIRMWARE_RPI=y
 BR2_PACKAGE_BRCMFMAC_SDIO_FIRMWARE_RPI_WIFI=y
 BR2_PACKAGE_SYSTEMD_NETWORKD=y
 BR2_PACKAGE_SYSTEMD_RESOLVED=y
-BR2_PACKAGE_SYSTEMD_TIMESYNCD=y
+# No timesyncd: nothing to sync against on an isolated network.
 
 # Handy on an appliance you cannot plug a keyboard into
 BR2_PACKAGE_OPENSSH=y
