@@ -14,13 +14,16 @@ point, the addresses and the paths live here and nowhere else.
   image, but every change meant compiling a kernel, mesa and systemd locally.
   Here `cache.nixos.org` serves prebuilt aarch64 binaries for all of userland.
   Boot time and image size are the price, and were paid deliberately.
-- **The kernel is still compiled here.** raspberry-pi-nix says its CI pushes
-  kernel builds to `nix-community.cachix.org`, but the repo has not been touched
-  since March 2025 and none of the three kernel versions it offers resolve in
-  that cache or in `cache.nixos.org` -- all 404, most likely garbage collected.
-  So the vendor kernel is a local build, the same as under buildroot. Since it
-  costs a compile either way, `kernel-version` is pinned to the newest of the
-  three (`v6_12_17`) rather than the March 2025 default.
+- **The kernel comes prebuilt.** This uses
+  [nixos-raspberrypi](https://github.com/nvmd/nixos-raspberrypi) rather than
+  raspberry-pi-nix, for one checkable reason: its cache actually has the kernel
+  in it. raspberry-pi-nix advertises the same thing, but every path it offers
+  404s -- collected, most likely, in the year and a half since that repo was
+  last touched. Here both the kernel and the Pi firmware resolve in
+  `nixos-raspberrypi.cachix.org`, so flutter-pi is the only thing compiled.
+- **The Zero 2 W is a real target here.** `raspberry-pi-02.base` builds
+  `linux_rpi02` for it; under raspberry-pi-nix it had to ride in as `bcm2711`,
+  a Pi 4 board that happens to boot on one.
 - **The Flutter engine is not built from source.** flutter-pi `dlopen()`s
   `libflutter_engine.so` at runtime, so we take the prebuilt engine that
   `flutterpi_tool` puts in the app bundle and build only the embedder. Building
@@ -137,20 +140,15 @@ not produce -- worth doing, but it needs a card you can reflash while trying it.
   try `colima start --memory 8` before hunting further. Reruns resume from the
   store, so a flaky build makes progress each time.
 
-- **Nothing caches the kernel for you.** CI pushes its build to a Cachix cache
-  (repository variable `CACHIX_CACHE`, secret `CACHIX_AUTH_TOKEN`), which is
-  what keeps a run from compiling the kernel every time. Add that cache as a
-  substituter locally and `make image` gets the same benefit:
+- **CI pushes to a Cachix cache of its own** (repository variable
+  `CACHIX_CACHE`, secret `CACHIX_AUTH_TOKEN`). That is for our own pieces --
+  flutter-pi and the image -- not the kernel, which comes prebuilt from
+  upstream's cache.
 
-  ```bash
-  nix build --extra-substituters https://<cache>.cachix.org \
-            --extra-trusted-public-keys <cache>.cachix.org-1:...
-  ```
-
-- **raspberry-pi-nix is stale** — last pushed March 2025, which pins this to
-  NixOS 24.11, and its `board` option only knows `bcm2711`/`bcm2712`. The Zero
-  2 W rides in as `bcm2711` (the same kernel config buildroot used) but is not a
-  tested target there.
+- **This tracks a moving upstream.** nixos-raspberrypi follows nixpkgs unstable
+  (26.05 as of writing) and pushes often, which is what makes its cache worth
+  having -- and also means `nix flake update` can move the kernel under you.
+  The lock file is the pin.
 - **512 MB of RAM is the open question.** A NixOS userland plus the Flutter
   engine on a Zero 2 W has not been verified on hardware.
 - The bundle `flutterpi_tool` produces lands in `build/flutter-pi/<cpu>/` and

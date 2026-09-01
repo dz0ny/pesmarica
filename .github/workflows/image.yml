@@ -7,9 +7,8 @@
 # needs an aarch64 host so cache.nixos.org serves binaries instead of nixpkgs
 # being built from source.
 #
-# Expect the image job to take a while: the Raspberry Pi kernel is not in any
-# binary cache (raspberry-pi-nix advertises one, but those paths are long gone),
-# so it is compiled here every time the flake lock or the kernel version moves.
+# The Pi kernel and firmware come prebuilt from nixos-raspberrypi's cache, so
+# the only thing compiled here is flutter-pi.
 
 name: image
 
@@ -81,10 +80,9 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@v22
 
-      # The Pi kernel is in no public cache, so without this every run compiles
-      # it again. Pushing it to our own cache makes the second run onwards cheap
-      # -- and makes `nix build` on a laptop cheap too, if the cache is added as
-      # a substituter there.
+      # The kernel comes from nixos-raspberrypi's cache; this is for our own
+      # pieces -- flutter-pi and the image itself -- so a rerun that only moved
+      # the songbook does not rebuild them.
       #
       # Needs a repository variable CACHIX_CACHE (the cache name) and a secret
       # CACHIX_AUTH_TOKEN. A fork or a PR from one has neither; the step is
@@ -94,7 +92,7 @@ jobs:
         with:
           name: ${{ vars.CACHIX_CACHE }}
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          extraPullNames: nix-community
+          extraPullNames: nixos-raspberrypi
 
       - name: Build
         working-directory: nix
@@ -107,12 +105,11 @@ jobs:
         run: |
           nix build "path:$PWD#sdImageRaw" \
             --print-build-logs \
-            --extra-substituters https://nix-community.cachix.org \
-            --extra-trusted-public-keys nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= \
+            --extra-substituters https://nixos-raspberrypi.cachix.org \
+            --extra-trusted-public-keys nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= \
             --out-link result
 
-          # cachix-action pushes what the build produced when it is configured;
-          # this is the line that turns a 40 minute kernel into a download.
+          # cachix-action pushes what the build produced when it is configured.
 
       - name: Compress
         working-directory: nix

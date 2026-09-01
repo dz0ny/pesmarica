@@ -114,12 +114,7 @@ let
   };
 in
 {
-  system.stateVersion = "24.11";
-
-  raspberry-pi-nix.board = "bcm2711";
-  # raspberry-pi-nix defaults to v6_6_51 (October 2024). Nothing is cached for
-  # any of the three available versions, so a newer kernel costs the same build.
-  raspberry-pi-nix.kernel-version = "v6_12_17";
+  system.stateVersion = "26.05";
 
   hardware.raspberry-pi.config.all = {
     base-dt-params.audio.enable = false;
@@ -161,13 +156,13 @@ in
 
   services.resolved = {
     enable = true;
-    llmnr = "false";
-    extraConfig = ''
+    settings.Resolve = {
+      LLMNR = "no";
       # Answers "pesmarica.local" without pulling in avahi.
-      MulticastDNS=yes
+      MulticastDNS = "yes";
       # dnsmasq owns :53 on wlan0; resolved must not try to claim it.
-      DNSStubListener=no
-    '';
+      DNSStubListener = "no";
+    };
   };
 
   services.dnsmasq = {
@@ -189,6 +184,10 @@ in
 
   # Nothing dials out, so there is no clock to sync and nobody to sync with.
   services.timesyncd.enable = false;
+
+  # The base profile brings ZFS in. On a box with 512 MB of RAM and one exFAT
+  # partition it is closure weight and a boot-time warning, nothing else.
+  boot.supportedFilesystems.zfs = lib.mkForce false;
 
   # The SD card is the part that dies. Everything that writes continuously is
   # moved to RAM, so that in steady state the only thing reaching the card is
@@ -308,7 +307,7 @@ in
   # weaker rename semantics than ext4, so a power cut mid-write can take out the
   # directory rather than one file; that is the price of a card Windows and
   # macOS will both mount.
-  boot.supportedFilesystems = [ "exfat" ];
+  boot.supportedFilesystems.exfat = true;
 
   # The image ships two partitions and the root one is not grown, so the rest of
   # the card is free for this. ConditionPathExists means it runs once, ever.

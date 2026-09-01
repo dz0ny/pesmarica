@@ -1,22 +1,38 @@
 {
   description = "Pesmarica signage appliance -- Raspberry Pi Zero 2 W";
 
-  inputs = {
-    # raspberry-pi-nix pins its own nixpkgs; following ours would mean building
-    # the vendor kernel locally instead of pulling it from its cachix.
-    raspberry-pi-nix.url = "github:nix-community/raspberry-pi-nix";
-    nixpkgs.follows = "raspberry-pi-nix/nixpkgs";
+  # Where the kernel comes from. raspberry-pi-nix advertises a cache too, but
+  # every path in it is long gone; this one is real, and checked before the
+  # switch: linux_rpi02 resolves in it rather than 404ing.
+  nixConfig = {
+    extra-substituters = [ "https://nixos-raspberrypi.cachix.org" ];
+    extra-trusted-public-keys = [
+      "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
+    ];
   };
 
-  outputs = { self, nixpkgs, raspberry-pi-nix, ... }:
+  inputs = {
+    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/main";
+    # Follow theirs: their cache is only useful for the nixpkgs their kernel and
+    # firmware were built against.
+    nixpkgs.follows = "nixos-raspberrypi/nixpkgs";
+  };
+
+  outputs = { self, nixpkgs, nixos-raspberrypi, ... }@inputs:
     let
       system = "aarch64-linux";
 
-      appliance = extra: nixpkgs.lib.nixosSystem {
-        inherit system;
+      appliance = extra: nixos-raspberrypi.lib.nixosSystemFull {
+        specialArgs = inputs;
         modules = [
-          raspberry-pi-nix.nixosModules.raspberry-pi
-          raspberry-pi-nix.nixosModules.sd-image
+          ({ nixos-raspberrypi, ... }: {
+            imports = with nixos-raspberrypi.nixosModules; [
+              # The Zero 2 W as its own target, rather than a Pi 4 config that
+              # happens to boot on one.
+              raspberry-pi-02.base
+              sd-image
+            ];
+          })
           ./modules/pesmarica.nix
         ] ++ extra;
       };

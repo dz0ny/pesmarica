@@ -4,8 +4,8 @@
 #   make flash DISK=/dev/rdisk4
 #
 # Nix runs inside the colima VM: it is aarch64 Linux, so cache.nixos.org serves
-# prebuilt binaries for all of userland. The Raspberry Pi kernel is NOT cached
-# despite what raspberry-pi-nix claims, so expect it to compile here.
+# prebuilt binaries for userland and nixos-raspberrypi's cache serves the Pi
+# kernel and firmware. Only flutter-pi is built here.
 #
 # The Flutter bundle is still produced on macOS (scripts/build-bundle.sh): the
 # Dart AOT snapshotter only exists as an x86_64 binary.
@@ -38,8 +38,8 @@ NIX_RUN = docker run --rm \
 	$(NIX_IMAGE) \
 	nix --extra-experimental-features "nix-command flakes" \
 	    $(SANDBOX_OFF) \
-	    --extra-substituters "https://nix-community.cachix.org" \
-	    --extra-trusted-public-keys "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+	    --extra-substituters "https://nixos-raspberrypi.cachix.org" \
+	    --extra-trusted-public-keys "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
 
 .PHONY: image bundle store lock eval shell clean flash
 
