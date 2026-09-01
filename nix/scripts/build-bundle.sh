@@ -30,6 +30,11 @@ case "$VERSION" in
 		;;
 esac
 
+# flutterpi_tool drives the Flutter build system, which needs the package config
+# in place. A fresh clone -- or a CI runner -- does not have one yet, and the
+# failure it produces names neither pub nor this script.
+flutter pub get
+
 if ! command -v flutterpi_tool >/dev/null 2>&1; then
 	echo "==> installing flutterpi_tool"
 	dart pub global activate flutterpi_tool
