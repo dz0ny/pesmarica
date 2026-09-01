@@ -55,3 +55,9 @@ os/external/board/pesmarica/rootfs-overlay/usr/share/pesmarica/content/
 # The display writes scale/lastShown/views back into the songbook; the sample
 # content is committed, live songbooks belong outside the repo.
 /build/preview/
+
+# Nix image build: staged copies and build outputs
+nix/bundle/
+nix/content/
+nix/out/
+nix/.docker/
