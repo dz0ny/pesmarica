@@ -5,7 +5,7 @@
 , pkg-config
 , libdrm
 , libGL
-, mesa
+, libgbm
 , libinput
 , libxkbcommon
 , systemd
@@ -25,7 +25,9 @@ stdenv.mkDerivation (finalAttrs: {
   };
 
   nativeBuildInputs = [ cmake pkg-config ];
-  buildInputs = [ libdrm libGL mesa libinput libxkbcommon systemd udev ];
+  # libgbm rather than mesa: gbm.pc moved into its own package, and mesa no
+  # longer carries it -- CMake fails at "No package 'gbm' found".
+  buildInputs = [ libdrm libGL libgbm libinput libxkbcommon systemd udev ];
 
   # The Flutter engine is not a build input: flutter-pi dlopen()s
   # libflutter_engine.so at runtime out of the app bundle, which is produced on
