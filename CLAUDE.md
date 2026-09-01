@@ -54,6 +54,7 @@ lib/
   src/web/static_assets.dart serves assets/web/ from the Flutter bundle
   src/web/credentials.dart   salt, hash, constant-time compare
 assets/web/                  the admin UI: html, css, js, favicon
+nix/                         the appliance image (flake, module, Makefile)
 ```
 
 `Songbook` and `Presenter` are plain `ChangeNotifier`s wired up by hand in
@@ -91,6 +92,28 @@ belongs to a human editing a page.
 picks a named instance that a single-file variable font does not have, so bold
 silently does nothing. Always go through `fontStyle()` in `page_style.dart`,
 which sets `fontVariations` alongside `fontWeight`.
+
+**The preview renderer must follow the display.** `assets/web/app.js` renders
+markdown itself — a library would need a build step and a network the box does
+not have. It mirrors what `MarkdownBody` does, including `softLineBreak: true`
+in `page_view.dart`: change how the screen lays a page out and the preview has
+to change with it, or it quietly starts lying.
+
+**`Settings.toJson` only emits fields it knows.** A key that is not a real field
+survives exactly until the next settings write, then it is gone. Anything new
+that belongs in `settings.json` needs a field, a `copyWith` arm and a line in
+both `toJson` and `fromJson` — `rotation` has a test pinning precisely this.
+
+**Rotation is a flutter-pi startup flag.** The app cannot turn its own picture:
+the launcher in the image reads `rotation` out of `settings.json` and passes
+`--rotation`, so the web interface writes the setting and restarts the unit.
+Validate it at both ends — a panel showing a corner of the songbook looks like a
+dead box, and the way back is ssh.
+
+**The songbook partition is exFAT.** That is deliberate: the card can be pulled
+and the pages edited on any laptop. It carries no permissions (they come from
+the mount, `umask=0077`) so nothing may `chmod` there, and no journal, so a
+power cut mid-write can cost more than the file being written.
 
 **The web UI lives in `assets/web/`, not in Dart.** It is served through
 `rootBundle`, so a change to `app.css`/`app.js`/`index.html` needs a restart to
@@ -132,14 +155,26 @@ a stale size.
 
 ## The appliance
 
-`os/` is a Buildroot external tree and the single definition of the system: the
-unit, the partitions, the network, the paths. `tool/deploy_pi.sh` only pushes a
-build onto a box that already runs the image — if you find yourself wanting to
-install a unit from the repo, change the image instead.
+`nix/` is a NixOS flake and the single definition of the system: the units, the
+access point, the partitions, the paths. `tool/deploy_pi.sh` only pushes a build
+onto a box that already runs the image — if you find yourself wanting to install
+a unit from the repo, change the image instead.
 
-The image cannot be built or booted from a test run here; it needs Docker and
-a real Zero 2 W. Treat changes under `os/` as unverified until someone flashes
-a card, and say so.
+It builds on [nixos-raspberrypi](https://github.com/nvmd/nixos-raspberrypi),
+chosen over raspberry-pi-nix because its cache actually holds the kernel: check
+a store path against `nixos-raspberrypi.cachix.org` before believing any such
+claim, since raspberry-pi-nix advertises one whose paths all 404.
+
+**The flake sits inside a git repository, so it only sees tracked files.**
+`nix/bundle` and `nix/content` are staged by `make bundle` and gitignored, which
+makes them invisible: `nix build .#` fails with a message about systemd units
+rather than the missing directory. Build with `path:` — the Makefile gets away
+with `.` only because it mounts `nix/` into the container without `.git`.
+
+The image cannot be built or booted from a test run here; it needs an aarch64
+Linux builder and a real Zero 2 W. Treat changes under `nix/` as unverified
+until someone flashes a card, and say so. CI builds it on Linux runners, which
+is the fastest way to find out whether a change even compiles.
 
 ## Testing
 
