@@ -1,0 +1,111 @@
+# Builds the appliance image the same way `nix/Makefile` does locally, minus the
+# colima detour: the runners are real Linux, so Nix runs directly.
+#
+# Two jobs because two architectures are involved. The Flutter bundle needs the
+# Dart AOT snapshotter, which is published as an x86_64 binary only -- it
+# cross-compiles for arm64 fine, it just cannot itself run on arm. The image
+# needs an aarch64 host so cache.nixos.org serves binaries instead of nixpkgs
+# being built from source.
+#
+# Expect the image job to take a while: the Raspberry Pi kernel is not in any
+# binary cache (raspberry-pi-nix advertises one, but those paths are long gone),
+# so it is compiled here every time the flake lock or the kernel version moves.
+
+name: image
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: Flutter bundle (arm64 target, x86_64 host)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Not a preference: flutterpi_tool compiles against flutter_tools
+          # internals and does not build against anything newer. Keep this in
+          # step with mise.toml.
+          flutter-version: 3.44.4
+          channel: stable
+          cache: true
+
+      - name: Install flutterpi_tool
+        run: |
+          dart pub global activate flutterpi_tool
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Build the bundle
+        run: ./nix/scripts/build-bundle.sh
+
+      - name: Collect it
+        run: |
+          bundle="$(cat build/flutter-pi/.bundle-path)"
+          mkdir -p out
+          cp -R "$bundle" out/bundle
+          # The prebuilt embedder that ships with the bundle is replaced by the
+          # one from pkgs/flutter-pi.nix, linked against the image's libraries.
+          rm -f out/bundle/flutter-pi out/bundle/.last_build_id
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: out/bundle
+          retention-days: 7
+
+  image:
+    name: SD image (aarch64)
+    needs: bundle
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle
+          path: nix/bundle
+
+      - name: Stage the songbook
+        # A flake cannot reference paths outside its root, so the pieces are
+        # copied in beside it -- the same thing `make bundle` does.
+        run: cp -R content nix/content
+
+      - uses: DeterminateSystems/nix-installer-action@v14
+
+      - name: Build
+        working-directory: nix
+        run: |
+          nix build .#sdImageRaw \
+            --print-build-logs \
+            --extra-substituters https://nix-community.cachix.org \
+            --extra-trusted-public-keys nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= \
+            --out-link result
+
+      - name: Compress
+        working-directory: nix
+        run: |
+          img="$(find -L result -name '*.img' | head -1)"
+          [ -n "$img" ] || { echo "no .img under result/"; ls -R result; exit 1; }
+          mkdir -p ../out
+          name="pesmarica-$(date -u +%Y%m%d)-${GITHUB_SHA::7}.img"
+          # -T0 to use the whole runner; the image is mostly zeroes and packs well.
+          xz -9 -T0 -c "$img" > "../out/$name.xz"
+          ls -lh "../out/$name.xz"
+          sha256sum "../out/$name.xz" > "../out/$name.xz.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sd-image
+          path: out/*
+          # Already xz; the artifact zip would only add a layer of nothing.
+          compression-level: 0
+          retention-days: 14
