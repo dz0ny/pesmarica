@@ -122,6 +122,13 @@ not produce -- worth doing, but it needs a card you can reflash while trying it.
 
 ## Known sharp edges
 
+- **The flake is inside a git repository, so it only sees tracked files.**
+  `bundle/` and `content/` are staged by `make bundle` and gitignored, which
+  makes them invisible to a git flake; the error that follows names systemd
+  units rather than the missing directory. Locally this never bites because the
+  Makefile mounts this directory into the container without `.git`. CI builds
+  with `path:` for the same reason.
+
 - **gcc segfaults inside the Nix build sandbox here**, and disabling the
   sandbox only moves the failure: cc1 has died on a trivial `int main(){}` in
   three different derivations (the kernel config step, flutter-pi, perl-env)

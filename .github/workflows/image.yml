@@ -83,8 +83,14 @@ jobs:
 
       - name: Build
         working-directory: nix
+        # `path:` rather than `.`: the flake sits inside a git repository, and a
+        # git flake only sees tracked files -- bundle/ and content/ are staged
+        # here and deliberately gitignored, so Nix would not find them and the
+        # error names systemd units rather than the missing directory. Locally
+        # this does not come up because the Makefile mounts nix/ into the
+        # container without .git, leaving no repository to filter against.
         run: |
-          nix build .#sdImageRaw \
+          nix build "path:$PWD#sdImageRaw" \
             --print-build-logs \
             --extra-substituters https://nix-community.cachix.org \
             --extra-trusted-public-keys nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= \
