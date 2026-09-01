@@ -87,6 +87,9 @@ class SongPageView extends StatelessWidget {
       data: bodySource,
       selectable: false,
       fitContent: false,
+      // A songbook is written in lines and has to read as lines: without this,
+      // markdown collapses a stanza into one wrapped paragraph.
+      softLineBreak: true,
       styleSheet: markdownStyles(font: font, palette: palette, base: size),
       imageBuilder: (uri, title, alt) => _image(uri, alt),
     );

@@ -286,9 +286,9 @@ $('source').addEventListener('keydown', (e) => {
 // no build step: the box is offline and this page has to keep working when
 // nothing can be fetched. It covers what a songbook page uses and nothing else.
 //
-// It follows the display, which does NOT break single newlines -- a stanza is
-// one flowing paragraph on screen, so it is one here too. If that ever changes
-// in page_view.dart, change it here as well or the preview starts lying.
+// It follows the display, which breaks on single newlines (softLineBreak in
+// page_view.dart) because a songbook is written in lines and has to read as
+// lines. If that ever changes there, change it here too or the preview lies.
 
 function escapeHtml(text) {
   return text
@@ -341,8 +341,8 @@ function renderMarkdown(source) {
       continue;
     }
 
-    // Single newlines collapse, exactly as the display treats them.
-    html.push('<p>' + inline(lines.join(' ')) + '</p>');
+    // Every line breaks, exactly as the display treats them.
+    html.push('<p>' + inline(lines.join('<br>')) + '</p>');
   }
 
   return html.join('\n');
