@@ -34,8 +34,9 @@ PESMARICA_CONTENT=$PWD/content \
 curl -s localhost:8080/api/state | python3 -m json.tool
 ```
 
-Kill it with `pkill -f "Products/Debug/pesmarica"` when done, and reset any
-`lastShown:`/`views:` churn it wrote into `content/*.md` before finishing.
+Kill it with `pkill -f "Products/Debug/pesmarica"` when done. Paging around no
+longer dirties `content/*.md`, so there is nothing to reset unless you edited a
+page through the web interface.
 
 ## Layout
 
@@ -61,7 +62,7 @@ one for its own sake.
 
 ## Things that will bite you
 
-**The content folder is the only database.** Zoom, usage counts and titles live
+**The content folder is the only database.** Zoom and titles live
 in each page's front matter; global settings live in `settings.json` beside the
 pages. There is no other store. A songbook can be rsynced to another screen and
 look identical — keep it that way.
@@ -80,10 +81,11 @@ in a fake async zone, so `await songbook.saveSettings(...)` never completes and
 the test hangs with no output. Wrap it: `await tester.runAsync(() => ...)`. The
 same applies to anything touching the engine, such as `boundary.toImage()`.
 
-**Navigation arms a 5 second timer.** `Presenter._settle` schedules the "page
-was shown" write. In a widget test, pump past it before the test ends
-(`tester.pump(Presenter.dwellBeforeCounting + const Duration(seconds: 1))`) or
-the framework fails with "A Timer is still pending".
+**Showing a page writes nothing.** Navigation used to arm a five second timer
+that stamped `views`/`lastShown` into the front matter; both the timer and the
+fields are gone, because the box writes to an SD card that a parish hall will
+brown out every winter. Nothing new should write on the display path — a write
+belongs to a human editing a page.
 
 **The bundled sans and serif families are variable fonts.** `FontWeight` alone
 picks a named instance that a single-file variable font does not have, so bold

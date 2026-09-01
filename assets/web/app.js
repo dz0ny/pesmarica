@@ -33,16 +33,6 @@ function say(message, isError) {
   $('status').className = isError ? 'error' : '';
 }
 
-function relative(iso) {
-  if (!iso) return '';
-  const mins = Math.round((Date.now() - new Date(iso)) / 60000);
-  if (mins < 1) return 'pravkar';
-  if (mins < 60) return mins + ' min';
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return hours + ' h';
-  const days = Math.round(hours / 24);
-  return days + (days === 1 ? ' dan' : ' dni');
-}
 
 function renderList() {
   const list = $('list');
@@ -54,10 +44,8 @@ function renderList() {
     row.innerHTML = '<span class="num"></span><span class="title"></span><span class="meta"></span>';
     row.children[0].textContent = page.number;
     row.children[1].textContent = page.title;
-    row.children[2].textContent = [
-      page.scale !== 1 ? Math.round(page.scale * 100) + '%' : '',
-      relative(page.lastShown),
-    ].filter(Boolean).join(' · ');
+    row.children[2].textContent =
+      page.scale !== 1 ? Math.round(page.scale * 100) + '%' : '';
     row.onclick = () => open(page.number);
     return row;
   }));

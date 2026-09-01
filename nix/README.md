@@ -86,9 +86,12 @@ Delete that directory on the box to go back to the image's own bundle.
 
 ## Writes to the card
 
-The SD card is the part that dies, so in steady state the only thing that
-reaches it is the songbook: the front matter the display stamps as pages are
-shown, and `hostapd.conf` when someone edits it.
+The SD card is the part that dies, so in steady state nothing reaches it at all.
+The display used to stamp a view counter and a timestamp into the front matter
+after a page had been up for a few seconds, which meant a service wrote to the
+card every few minutes to record something nobody read; it does not any more.
+What is left is the songbook, written when a human edits a page, and
+`hostapd.conf` when someone changes the network.
 
 The songbook is not on the root filesystem at all. `pesmarica-data` creates a
 third partition on first boot from the space the image leaves free, formats it

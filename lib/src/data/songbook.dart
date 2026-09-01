@@ -202,25 +202,6 @@ class Songbook extends ChangeNotifier {
     );
   }
 
-  /// Records that a page was actually put in front of an audience. Called
-  /// once the page has been on screen long enough to count as "shown", so
-  /// scrubbing past twenty pages does not rewrite twenty files.
-  Future<void> markShown(SongPage page) async {
-    final index = _pages.indexWhere((p) => p.path == page.path);
-    if (index < 0) return;
-    final current = _pages[index];
-    final stamped = current.copyWith(
-      lastShown: DateTime.now(),
-      views: current.views + 1,
-    );
-    _pages = List<SongPage>.of(_pages)..[index] = stamped;
-    try {
-      await _write(File(stamped.path), stamped.toSource());
-    } on Object catch (e) {
-      debugPrint('pesmarica: could not record usage: $e');
-    }
-  }
-
   Future<void> saveSettings(Settings settings) async {
     _settings = settings;
     notifyListeners();

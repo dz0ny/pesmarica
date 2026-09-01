@@ -55,18 +55,19 @@ void main() {
       expect(slug.title, 'lepa pesem');
     });
 
-    test('round-trips zoom, usage and unknown keys', () {
+    test('round-trips zoom and unknown keys', () {
       const source = '---\ntitle: Test\nauthor: Nekdo\nscale: 1.4\nviews: 7\n---\n\n# Test\n';
       final page = SongPage.parse('/x/001-test.md', source, number: 1);
       expect(page.scale, 1.4);
-      expect(page.views, 7);
       expect(page.extra['author'], 'Nekdo');
 
-      final rewritten = page.toSource(scale: 1.8, views: 8);
+      final rewritten = page.toSource(scale: 1.8);
       final again = SongPage.parse('/x/001-test.md', rewritten, number: 1);
       expect(again.scale, 1.8);
-      expect(again.views, 8);
       expect(again.extra['author'], 'Nekdo');
+      // Dropped rather than carried: nothing reads it any more.
+      expect(again.extra['views'], isNull);
+      expect(rewritten, isNot(contains('views:')));
       expect(again.body.trim(), '# Test');
     });
 

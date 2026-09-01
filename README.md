@@ -63,7 +63,7 @@ know from PowerPoint — type a number, press Enter.
 | Recovery | A rejected access point config is replaced with the shipped default |
 | Security | One password, salted and hashed; cookie or `X-Pesmarica-Auth` header |
 | Appliance | NixOS image with the unit files, network, and paths defined once |
-| Durability | Atomic writes, and in steady state the SD card sees only songbook edits |
+| Durability | Atomic writes; nothing is written to the card unless somebody edits a page |
 
 ## How It Works
 
@@ -173,6 +173,8 @@ number still show up, filed after the last numbered page.
 
 Everything the app remembers about a page is written back into that page, so a
 songbook is self-contained — copy it to another screen and it looks the same.
+Showing a page is not remembered at all: the display writes nothing as it pages
+through a service, so the card is only ever written when somebody edits.
 
 ```markdown
 ---
@@ -180,8 +182,6 @@ title: Čebelica na travniku   # optional; otherwise the first heading, then the
 scale: 1.1                    # magnification set with + / − on the display
 align: center                 # start (default) or center
 showTitle: false              # hide the title on this page
-lastShown: 2026-09-01T12:08:05.178826Z   # written by the display
-views: 12                                # written by the display
 ---
 
 Čez travnik, čez polje

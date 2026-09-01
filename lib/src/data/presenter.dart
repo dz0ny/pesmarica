@@ -57,30 +57,14 @@ class Presenter extends ChangeNotifier {
 
   int? _lastNumber;
 
-  Timer? _dwellTimer;
-
-  /// A page only counts as "shown" once it has stayed up this long, so paging
-  /// through the book to find something does not rewrite every file it passes.
-  static const Duration dwellBeforeCounting = Duration(seconds: 5);
-
+  /// Showing a page writes nothing. The display used to stamp a view counter
+  /// and a timestamp into the front matter after a dwell, which meant a service
+  /// wrote to the card every few minutes to record something nobody read.
   void _settle(int index) {
     if (pages.isEmpty) return;
     _index = index.clamp(0, pages.length - 1);
     _lastNumber = pages[_index].number;
     notifyListeners();
-    _scheduleUsageWrite();
-  }
-
-  void _scheduleUsageWrite() {
-    _dwellTimer?.cancel();
-    final page = current;
-    if (page == null) return;
-    _dwellTimer = Timer(dwellBeforeCounting, () {
-      final still = current;
-      if (still != null && still.path == page.path) {
-        songbook.markShown(still);
-      }
-    });
   }
 
   void next() => _settle(_index + 1);
@@ -217,7 +201,6 @@ class Presenter extends ChangeNotifier {
   @override
   void dispose() {
     songbook.removeListener(_onSongbookChanged);
-    _dwellTimer?.cancel();
     _numberTimeout?.cancel();
     _flashTimer?.cancel();
     super.dispose();

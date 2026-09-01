@@ -201,14 +201,32 @@ void main() {
     expect(songbook.createPage(number: 2), throwsArgumentError);
   });
 
-  test('records usage in the front matter once a page has been dwelt on', () async {
-    await songbook.markShown(songbook.pages.first);
-    final source = File(songbook.pages.first.path).readAsStringSync();
-    expect(source, contains('views: 1'));
-    expect(source, contains('lastShown:'));
+  test('showing pages writes nothing to the card', () async {
+    // The card is the part that dies, so a service must not cost it writes.
+    final file = File(songbook.pages.first.path);
+    final before = file.lastModifiedSync();
+    final source = file.readAsStringSync();
 
-    final page = SongPage.parse(songbook.pages.first.path, source, number: 1);
-    expect(page.views, 1);
-    expect(page.lastShown, isNotNull);
+    presenter.next();
+    presenter.previous();
+    presenter.goToNumber(2);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(file.lastModifiedSync(), before);
+    expect(file.readAsStringSync(), source);
+  });
+
+  test('sheds usage left over from an older songbook when the page is written', () {
+    // Pages written before the counters were dropped still carry them; the next
+    // rewrite is where they go, rather than in a pass of its own over the card.
+    final page = SongPage.parse(
+      '/tmp/010-old.md',
+      '---\ntitle: Stara\nviews: 12\nlastShown: 2026-09-01T12:08:05.178826Z\n---\n\nBesedilo\n',
+      number: 10,
+    );
+    final rewritten = page.toSource();
+    expect(rewritten, isNot(contains('views:')));
+    expect(rewritten, isNot(contains('lastShown:')));
+    expect(rewritten, contains('title: Stara'));
   });
 }

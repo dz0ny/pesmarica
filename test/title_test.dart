@@ -45,11 +45,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   }
 
-  /// Navigating arms the "page was shown" timer; let it fire so the test does
-  /// not end with it pending.
-  Future<void> quiesce(WidgetTester tester) =>
-      tester.pump(Presenter.dwellBeforeCounting + const Duration(seconds: 1));
-
   test('showTitle is null unless the page pins it', () {
     expect(songbook.pages[0].showTitle, isNull);
     expect(songbook.pages[2].showTitle, isFalse);
@@ -68,7 +63,6 @@ void main() {
     await show(tester);
     // Once as the page heading, once in the chrome bar.
     expect(find.text('Iz glave'), findsNWidgets(2));
-    await quiesce(tester);
   });
 
   testWidgets('hiding the title drops the leading heading too', (tester) async {
@@ -77,7 +71,6 @@ void main() {
     expect(find.text('Skrit naslov'), findsNothing);
     expect(find.textContaining('Kitica'), findsOneWidget);
     expect(find.text('3'), findsOneWidget, reason: 'the number still guides the room');
-    await quiesce(tester);
   });
 
   testWidgets('the global default hides titles on pages that do not pin one', (tester) async {
@@ -94,6 +87,5 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Iz telesa'), findsWidgets);
-    await quiesce(tester);
   });
 }

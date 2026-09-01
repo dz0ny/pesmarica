@@ -255,8 +255,6 @@ class AdminServer {
           'title': page.title,
           'file': page.fileName,
           'scale': page.scale,
-          'views': page.views,
-          'lastShown': page.lastShown?.toIso8601String(),
         },
     ],
   };

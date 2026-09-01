@@ -16,8 +16,6 @@ class SongPage {
     required this.scale,
     required this.align,
     required this.showTitle,
-    required this.lastShown,
-    required this.views,
     required this.extra,
   });
 
@@ -48,13 +46,6 @@ class SongPage {
   /// flipping the global switch still moves every ordinary page.
   final bool? showTitle;
 
-  /// When this page was last put on screen. Written back to the front matter
-  /// so usage survives restarts and shows up in the web list ("nazadnje").
-  final DateTime? lastShown;
-
-  /// How many times the page has been shown, ever.
-  final int views;
-
   /// Front matter keys Pesmarica does not interpret, preserved on rewrite.
   final Map<String, Object?> extra;
 
@@ -79,6 +70,10 @@ class SongPage {
       ..remove('scale')
       ..remove('align')
       ..remove('showTitle')
+      // Not fields any more, and not preserved either: pages written by an
+      // older Pesmarica carry a view counter and a timestamp that nothing reads.
+      // Dropping them here means they disappear the next time a human edits the
+      // page, which costs no write of its own.
       ..remove('lastShown')
       ..remove('views');
 
@@ -97,8 +92,6 @@ class SongPage {
           ? PageAlign.center
           : PageAlign.start,
       showTitle: _bool(matter.values['showTitle']),
-      lastShown: _dateTime(matter.values['lastShown']),
-      views: _int(matter.values['views']),
       extra: extra,
     );
   }
@@ -133,15 +126,6 @@ class SongPage {
     }
   }
 
-  static DateTime? _dateTime(Object? raw) {
-    if (raw is DateTime) return raw;
-    if (raw == null) return null;
-    return DateTime.tryParse('$raw');
-  }
-
-  static int _int(Object? raw) =>
-      raw is num ? raw.toInt() : int.tryParse('${raw ?? ''}') ?? 0;
-
   static double clampScale(double value) =>
       value.isFinite ? value.clamp(minScale, maxScale) : 1.0;
 
@@ -150,12 +134,9 @@ class SongPage {
     double? scale,
     PageAlign? align,
     String? body,
-    DateTime? lastShown,
-    int? views,
   }) {
     final effectiveScale = clampScale(scale ?? this.scale);
     final effectiveAlign = align ?? this.align;
-    final effectiveViews = views ?? this.views;
     final values = <String, Object?>{
       'title': declaredTitle,
       ...extra,
@@ -165,8 +146,6 @@ class SongPage {
           : double.parse(effectiveScale.toStringAsFixed(2)),
       'align': effectiveAlign == PageAlign.center ? 'center' : null,
       'showTitle': showTitle,
-      'lastShown': (lastShown ?? this.lastShown)?.toUtc().toIso8601String(),
-      'views': effectiveViews == 0 ? null : effectiveViews,
     };
     return FrontMatter.compose(values, body ?? this.body);
   }
@@ -174,8 +153,6 @@ class SongPage {
   SongPage copyWith({
     double? scale,
     PageAlign? align,
-    DateTime? lastShown,
-    int? views,
   }) => SongPage(
     number: number,
     path: path,
@@ -185,8 +162,6 @@ class SongPage {
     scale: scale == null ? this.scale : clampScale(scale),
     align: align ?? this.align,
     showTitle: showTitle,
-    lastShown: lastShown ?? this.lastShown,
-    views: views ?? this.views,
     extra: extra,
   );
 }

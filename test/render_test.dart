@@ -76,9 +76,6 @@ void main() {
 
     expect(long, lessThan(short));
     expect(tester.takeException(), isNull);
-
-    // Let the "page was shown" dwell timer fire so it is not left pending.
-    await tester.pump(Presenter.dwellBeforeCounting + const Duration(seconds: 1));
   });
 
   testWidgets('flipping polarity swaps the two colours', (tester) async {
