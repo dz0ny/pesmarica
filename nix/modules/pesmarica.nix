@@ -102,6 +102,9 @@ in
   system.stateVersion = "24.11";
 
   raspberry-pi-nix.board = "bcm2711";
+  # raspberry-pi-nix defaults to v6_6_51 (October 2024). Nothing is cached for
+  # any of the three available versions, so a newer kernel costs the same build.
+  raspberry-pi-nix.kernel-version = "v6_12_17";
 
   hardware.raspberry-pi.config.all = {
     base-dt-params.audio.enable = false;

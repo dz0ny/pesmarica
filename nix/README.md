@@ -12,9 +12,15 @@ point, the addresses and the paths live here and nowhere else.
 
 - **NixOS over buildroot.** Buildroot produced a smaller, much faster-booting
   image, but every change meant compiling a kernel, mesa and systemd locally.
-  Here `cache.nixos.org` serves prebuilt aarch64 binaries and raspberry-pi-nix's
-  cachix serves the Raspberry Pi kernel, so nothing is compiled that somebody
-  else already built. Boot time is the price, and it was paid deliberately.
+  Here `cache.nixos.org` serves prebuilt aarch64 binaries for all of userland.
+  Boot time and image size are the price, and were paid deliberately.
+- **The kernel is still compiled here.** raspberry-pi-nix says its CI pushes
+  kernel builds to `nix-community.cachix.org`, but the repo has not been touched
+  since March 2025 and none of the three kernel versions it offers resolve in
+  that cache or in `cache.nixos.org` -- all 404, most likely garbage collected.
+  So the vendor kernel is a local build, the same as under buildroot. Since it
+  costs a compile either way, `kernel-version` is pinned to the newest of the
+  three (`v6_12_17`) rather than the March 2025 default.
 - **The Flutter engine is not built from source.** flutter-pi `dlopen()`s
   `libflutter_engine.so` at runtime, so we take the prebuilt engine that
   `flutterpi_tool` puts in the app bundle and build only the embedder. Building
