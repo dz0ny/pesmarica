@@ -89,13 +89,31 @@ runtime. Unplugging the box is a supported way to turn it off.
 - Any HDMI screen
 - A keypad, presenter remote, or phone to drive it
 - For development: Flutter, and macOS or Linux
-- For building the image: Docker via [colima](https://github.com/abiosoft/colima),
-  and Flutter pinned to 3.44.x in `mise.toml` — `flutterpi_tool` compiles
-  against `flutter_tools` internals and does not build against anything newer
+- For building the image yourself: Docker via
+  [colima](https://github.com/abiosoft/colima), and Flutter pinned to 3.44.x in
+  `mise.toml` — `flutterpi_tool` compiles against `flutter_tools` internals and
+  does not build against anything newer. CI builds the same image on Linux
+  runners if you would rather not.
 
 ## Install
 
-Build the appliance image and write it to a card:
+The `image` workflow builds the card image and attaches it to the run as an
+`.img.xz` artifact, so the usual way to get one is to download it from
+[Actions](https://github.com/dz0ny/pesmarica/actions) and write it to a card:
+
+```bash
+diskutil unmountDisk /dev/rdisk4
+```
+
+```bash
+xz -dc pesmarica-*.img.xz | sudo dd of=/dev/rdisk4 bs=4m status=progress
+```
+
+Note the `r` in `rdisk4`: the raw device is several times faster. `make flash`
+does the same three steps -- unmount, write, eject -- for an image you built
+locally.
+
+To build it yourself instead:
 
 ```bash
 cd nix && make image
@@ -105,8 +123,10 @@ cd nix && make image
 make flash DISK=/dev/rdisk4
 ```
 
-See [nix/README.md](nix/README.md) for the prerequisites and what the image
-contains. Between reflashes, push a new build onto a running box:
+The Pi kernel and firmware come prebuilt from
+[nixos-raspberrypi](https://github.com/nvmd/nixos-raspberrypi)'s cache, so a
+local build compiles only flutter-pi. See [nix/README.md](nix/README.md) for
+the prerequisites and what the image contains. Between reflashes, push a new build onto a running box:
 
 ```bash
 HOST=root@pesmarica.local ./tool/deploy_pi.sh
