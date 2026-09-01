@@ -160,6 +160,13 @@ edits pages, but this one replaces the program the box runs, and an appliance
 whose interface is open to everyone on the access point should not hand that
 out. Set a password in `settings.json` first (see below).
 
+Every published release carries a `pesmarica-bundle-<version>.tar.gz` next to
+the card image, which is the file that button wants: download it, join the
+box's access point, and hand it over. Reflashing a card is how you install the
+appliance; this is how you update one that is already on a wall. The version the
+interface shows comes from inside the archive, so renaming the download does not
+rename the build.
+
 To run it on a desktop instead:
 
 ```bash

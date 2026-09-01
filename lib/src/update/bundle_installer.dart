@@ -34,6 +34,11 @@ class BundleInstaller {
 
   /// Installs [body] and returns the slot it went into.
   ///
+  /// [version] is what to call the build if the archive does not say. An
+  /// archive that carries its own `.version` wins: a release names itself, and
+  /// that name should survive being downloaded, renamed and re-uploaded months
+  /// later, which is exactly what the file name will not do.
+  ///
   /// The caller restarts the unit afterwards; until it does, the box keeps
   /// running the old bundle, which is exactly what makes this safe to call.
   Future<String> install(Stream<List<int>> body, {String? version}) async {
@@ -47,8 +52,14 @@ class BundleInstaller {
       final slot = p.basename(target.path);
       await _extract(archive, target, strip: strip);
 
+      // A `.complete` that came out of the archive would let an upload declare
+      // itself sound before anything here had checked it. Ours is the only one
+      // that counts, and slots.finish writes it after the files are verified.
+      final claimed = File(p.join(target.path, '.complete'));
+      if (claimed.existsSync()) await claimed.delete();
+
       try {
-        await slots.finish(slot, version: version);
+        await slots.finish(slot, version: slots.versionOf(slot) ?? version);
       } on ArgumentError {
         throw const BundleRejected(
           'Arhiv ni programski paket: manjkajo datoteke aplikacije.',

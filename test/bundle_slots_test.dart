@@ -124,7 +124,11 @@ void main() {
 
   group('installer', () {
     /// A bundle as a tarball, the way a build hands one over.
-    Future<File> archive({String prefix = ''}) async {
+    Future<File> archive({
+      String prefix = '',
+      String? embeddedVersion,
+      bool claimComplete = false,
+    }) async {
       final staging = Directory(p.join(root.path, 'src'))
         ..createSync(recursive: true);
       final inner = prefix.isEmpty
@@ -132,6 +136,14 @@ void main() {
           : (Directory(p.join(staging.path, prefix))..createSync());
       for (final name in BundleSlots.required) {
         File(p.join(inner.path, name)).writeAsStringSync('$name payload');
+      }
+      if (embeddedVersion != null) {
+        File(p.join(inner.path, '.version')).writeAsStringSync(
+          '$embeddedVersion\n',
+        );
+      }
+      if (claimComplete) {
+        File(p.join(inner.path, '.complete')).writeAsStringSync('ok\n');
       }
       final file = File(p.join(root.path, 'bundle.tar'));
       final result = await Process.run('tar', <String>[
@@ -163,6 +175,46 @@ void main() {
         File(p.join(root.path, 'bundles', 'b', 'app.so')).readAsStringSync(),
         'app.so payload',
       );
+    });
+
+    test('a version inside the archive beats the one from the file name',
+        () async {
+      // What a release ships. The name it was given at build time should
+      // survive being downloaded, renamed and uploaded months later.
+      final tar = await archive(embeddedVersion: 'v1.4.0');
+      final slot = await BundleInstaller(slots).install(
+        tar.openRead(),
+        version: 'pesmarica-bundle-whatever-the-browser-called-it',
+      );
+      expect(slots.versionOf(slot), 'v1.4.0');
+    });
+
+    test('an archive cannot declare itself complete', () async {
+      // Otherwise a half-written upload carrying its own marker would look
+      // sound to the launcher before anything had checked it.
+      final tar = await archive(claimComplete: true);
+      final slot = await BundleInstaller(slots).install(tar.openRead());
+      expect(slots.isComplete(slot), isTrue, reason: 'we wrote our own marker');
+
+      // And with a file missing it must not be complete, marker or no marker.
+      final broken = Directory(p.join(root.path, 'broken'))
+        ..createSync(recursive: true);
+      File(p.join(broken.path, 'app.so')).writeAsStringSync('only one file');
+      File(p.join(broken.path, '.complete')).writeAsStringSync('ok\n');
+      final brokenTar = File(p.join(root.path, 'broken.tar'));
+      await Process.run('tar', <String>[
+        '-cf',
+        brokenTar.path,
+        '-C',
+        root.path,
+        'broken',
+      ]);
+
+      await expectLater(
+        BundleInstaller(slots).install(brokenTar.openRead()),
+        throwsA(isA<BundleRejected>()),
+      );
+      expect(slots.active, slot, reason: 'still on the good one');
     });
 
     test('unwraps an archive of the bundle directory itself', () async {
