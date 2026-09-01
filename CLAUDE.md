@@ -49,6 +49,8 @@ lib/
   src/data/songbook.dart     the folder: load, watch, write, import
   src/data/presenter.dart    what is on screen; keypad buffer; toggles
   src/input/key_bindings.dart key event -> presenter action
+  src/update/bundle_slots.dart   the two app slots: format, staging, commit
+  src/update/bundle_installer.dart an uploaded .tar -> the slot that is idle
   src/ui/                    presenter screen, page rendering, overlays
   src/web/admin_server.dart  shelf routes, cookie auth
   src/web/static_assets.dart serves assets/web/ from the Flutter bundle
@@ -174,14 +176,27 @@ with `.` only because it mounts `nix/` into the container without `.git`.
 The image cannot be built or booted from a test run here; it needs an aarch64
 Linux builder and a real Zero 2 W. Treat changes under `nix/` as unverified
 until someone flashes a card, and say so. CI builds it on Linux runners, which
-is the fastest way to find out whether a change even compiles.
+is the fastest way to find out whether a change even compiles. The one exception
+is the launch script, which `tool/test_launcher.sh` lifts out of the module and
+runs against stub bundles — so its slot picking *is* covered.
+
+**App updates are A/B, and the launcher owns the recovery half.** Two slots
+beside the songbook, a pointer file, and a trial counter; the format is
+documented once, in `lib/src/update/bundle_slots.dart`, and read from two
+places: that class (staging, committing, clearing the trial) and the launch
+script in `nix/modules/pesmarica.nix` (picking a slot, counting failed starts,
+reverting). The split is deliberate — the launcher is what still runs when the
+deployed bundle cannot, so anything that has to work when the app is broken
+belongs there and nowhere else. Change the format and you change both, plus
+`tool/deploy_pi.sh`, which writes it over ssh.
 
 ## Testing
 
 `test/front_matter_test.dart` and `test/presenter_test.dart` are plain `test()`
 over a temp songbook — fast, and where most logic belongs.
 `test/render_test.dart` and `test/title_test.dart` are widget tests over a real
-`PresenterScreen`.
+`PresenterScreen`. `test/bundle_slots_test.dart` covers the update slots, and
+`tool/test_launcher.sh` covers the rollback side of them in shell.
 
 Prefer asserting on values the app actually computes (e.g. the
 `MarkdownStyleSheet` font size) over walking the render tree; finder-based

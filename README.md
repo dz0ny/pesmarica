@@ -63,6 +63,7 @@ know from PowerPoint — type a number, press Enter.
 | Recovery | A rejected access point config is replaced with the shipped default |
 | Security | One password, salted and hashed; cookie or `X-Pesmarica-Auth` header |
 | Appliance | NixOS image with the unit files, network, and paths defined once |
+| Updates | Two app slots, an atomic flip, and an automatic revert if the new one will not start |
 | Durability | Atomic writes; nothing is written to the card unless somebody edits a page |
 
 ## How It Works
@@ -132,10 +133,32 @@ the prerequisites and what the image contains. Between reflashes, push a new bui
 HOST=root@pesmarica.local ./tool/deploy_pi.sh
 ```
 
-That syncs the bundle to `/var/lib/pesmarica/bundle-override` and the songbook
-to `/var/lib/pesmarica` (without `--delete`, so pages created through the web
-interface survive), then restarts the unit. It installs nothing: changing the
+That syncs the songbook to `/var/lib/pesmarica` (without `--delete`, so pages
+created through the web interface survive) and the app into whichever update
+slot is not running, then restarts onto it. It installs nothing: changing the
 system means rebuilding the image.
+
+### Updates are A/B
+
+The box keeps two copies of the app, `bundles/a` and `bundles/b` beside the
+songbook, and a one-byte pointer at the one it runs -- the scheme a browser uses
+to update itself. A deploy fills the copy that is *not* running and flips the
+pointer last, so an update interrupted by a power cut leaves the box on the
+version it was already running.
+
+A freshly installed version is then **on trial**: if it fails to draw a frame
+three starts running, the box points itself back at the previous copy on its
+own. If both copies are unusable it falls back to the bundle inside the image
+itself, which lives in the read-only Nix store and is the one copy a bad update
+cannot reach. The web interface shows the running version, and says so while it
+is still on trial.
+
+Updating without a laptop works too: **Posodobi** in the web interface takes a
+`.tar` (or `.tar.gz`) of a built bundle and installs it the same way. That
+button only works once a password is set -- everything else in the interface
+edits pages, but this one replaces the program the box runs, and an appliance
+whose interface is open to everyone on the access point should not hand that
+out. Set a password in `settings.json` first (see below).
 
 To run it on a desktop instead:
 

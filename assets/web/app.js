@@ -62,6 +62,20 @@ function renderSettings() {
   }
   $('font').value = s.font || 'inter';
   $('rotation').value = String(s.rotation ?? 0);
+  renderVersion();
+}
+
+// Which of the two bundles the box is running, and whether it is still on
+// trial -- the operator should be able to tell a finished update from one that
+// is about to be rolled back.
+function renderVersion() {
+  const update = state.update;
+  if (!update) return;
+  const running = (update.slots || []).find((s) => s.slot === update.active);
+  const name = (running && running.version) || update.active;
+  $('version').textContent = update.onTrial
+    ? 'različica ' + name + ' (na preizkusu)'
+    : 'različica ' + name;
 }
 
 async function refresh() {
@@ -165,6 +179,36 @@ $('rotation').onchange = (e) => {
   putSettings({ rotation: Number(e.target.value) });
 };
 $('showTitle').onchange = (e) => putSettings({ showTitle: e.target.checked });
+
+// --- Posodobitev ---------------------------------------------------------
+// The new bundle goes into the slot that is not running, so the upload itself
+// changes nothing; the box only switches when it restarts at the end. If the
+// new version does not come up, the box reverts to this one on its own.
+$('update').onclick = () => {
+  // The box refuses to install anything while the interface is open to whoever
+  // is on the access point. Say so here rather than after a long upload.
+  if (!state.protected) {
+    return say('Posodobitev je mogoča le, ko je nastavljeno geslo.', true);
+  }
+  $('updateFile').click();
+};
+$('updateFile').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!confirm('Namestim ' + file.name + '? Zaslon se bo znova zagnal.')) return;
+
+  say('Nalagam ' + file.name + ' — ne izklapljaj naprave.');
+  try {
+    const version = file.name.replace(/\.(tar\.gz|tgz|tar)$/i, '');
+    await api('/api/update?version=' + encodeURIComponent(version), {
+      method: 'POST', body: file,
+    });
+    say('Nameščeno. Zaslon se zaganja z novo različico.');
+  } catch (err) {
+    say('Posodobitev: ' + err.message, true);
+  }
+};
 
 // --- Drag and drop -------------------------------------------------------
 // Markdown dropped on the list becomes new pages; images dropped on the

@@ -77,15 +77,23 @@ Change the shipped default (SSID `Pesmarica`, passphrase `pesmarica`, country
 
 ## Iterating without reflashing
 
-The unit runs the bundle from the nix store. `../tool/deploy_pi.sh` pushes a
-working build to `/var/lib/pesmarica/bundle-override`, which the launcher
-prefers when it exists:
+The unit runs the bundle from the nix store until something is deployed.
+`../tool/deploy_pi.sh` pushes a working build into one of two slots under
+`/var/lib/pesmarica/bundles`, which the launcher prefers over the store copy:
 
 ```bash
 HOST=root@192.168.4.1 ../tool/deploy_pi.sh
 ```
 
-Delete that directory on the box to go back to the image's own bundle.
+Empty that directory on the box to go back to the image's own bundle.
+
+The two slots are the update mechanism, not just a deploy target. A deploy
+fills the slot that is *not* running and flips `bundles/active` at it last, so
+an interrupted push leaves the box on the build it was already running; and the
+launcher reverts to the previous slot if the new one fails to draw a frame three
+starts running. `bundles/trial` is what counts those starts — the app deletes it
+once it is up. The format is documented in `lib/src/update/bundle_slots.dart`,
+and `../tool/test_launcher.sh` exercises the launcher's half of it without a Pi.
 
 ## Writes to the card
 

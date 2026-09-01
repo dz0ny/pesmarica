@@ -10,6 +10,8 @@ import 'package:shelf_router/shelf_router.dart';
 import '../data/presenter.dart';
 import '../data/songbook.dart';
 import '../model/settings.dart';
+import '../update/bundle_installer.dart';
+import '../update/bundle_slots.dart';
 import 'credentials.dart';
 import 'static_assets.dart';
 
@@ -25,6 +27,8 @@ class AdminServer {
   final Presenter presenter;
 
   final StaticAssets _assets = StaticAssets();
+
+  late final BundleSlots slots = BundleSlots(songbook.root);
 
   HttpServer? _server;
 
@@ -167,6 +171,7 @@ class AdminServer {
       return _json(_state());
     })
     ..put('/api/settings', _putSettings)
+    ..post('/api/update', _installBundle)
     ..post('/api/images', _uploadImage)
     ..get('/media/<name|[^/]+>', _media)
     // What phones and laptops fetch to decide whether a network is usable.
@@ -244,6 +249,7 @@ class AdminServer {
     'current': presenter.current?.number,
     'protected': songbook.settings.isProtected,
     'settings': songbook.settings.toJson(),
+    'update': slots.describe(),
     'fonts': <Map<String, String>>[
       for (final font in AppFont.all)
         <String, String>{'id': font.id, 'label': font.label},
@@ -357,6 +363,40 @@ class AdminServer {
       Future<void>.delayed(const Duration(milliseconds: 300), _restartDisplay);
     }
     return _json(_state());
+  }
+
+  /// Takes a new app bundle as a `.tar` body and installs it into the slot that
+  /// is not running, then restarts onto it.
+  ///
+  /// Only with a password set. Everything else here writes pages; this writes
+  /// the program the box runs next, and an appliance whose web interface is
+  /// open to anyone on the access point should not also hand out the ability to
+  /// replace its software. The refusal names the fix rather than pretending the
+  /// endpoint does not exist.
+  Future<Response> _installBundle(Request request) async {
+    if (!songbook.settings.isProtected) {
+      return _json(<String, Object?>{
+        'error': 'Posodobitev je mogoča le, ko je nastavljeno geslo.',
+      }, status: 403);
+    }
+
+    try {
+      final slot = await BundleInstaller(slots).install(
+        request.read(),
+        version: request.url.queryParameters['version'],
+      );
+      // Answer before the restart: it takes this server down with it, and the
+      // browser needs to be told which slot it is now watching come up.
+      Future<void>.delayed(const Duration(milliseconds: 300), _restartDisplay);
+      return _json(<String, Object?>{'ok': true, 'slot': slot});
+    } on BundleRejected catch (e) {
+      return _json(<String, Object?>{'error': e.message}, status: 400);
+    } on Object catch (e) {
+      debugPrint('pesmarica: bundle install failed: $e');
+      return _json(<String, Object?>{
+        'error': 'Posodobitev ni uspela.',
+      }, status: 500);
+    }
   }
 
   Future<Response> _uploadImage(Request request) async {
