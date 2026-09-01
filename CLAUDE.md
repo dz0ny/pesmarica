@@ -52,7 +52,6 @@ lib/
   src/web/admin_server.dart  shelf routes, cookie auth
   src/web/static_assets.dart serves assets/web/ from the Flutter bundle
   src/web/credentials.dart   salt, hash, constant-time compare
-  src/net/access_point.dart  read/rewrite hostapd.conf, restart the radio
 assets/web/                  the admin UI: html, css, js, favicon
 ```
 
@@ -96,14 +95,13 @@ which sets `fontVariations` alongside `fontWeight`.
 show up, and a new file must be added to both `StaticAssets.allowed` and the
 `assets:` list in `pubspec.yaml` or it will 404.
 
-**The access point is the only way into the box.** `hostapd.conf` on the data
-partition is the source of truth — do not add a copy of the SSID to
-`settings.json`. Anything that writes it must go through
-`AccessPoint.problem` first; a config hostapd rejects is a brick, recoverable
-only by the `ap-preflight` fallback in the image or a serial console. Changing
-it disconnects the caller, so answer the request before restarting hostapd.
-Set `PESMARICA_HOSTAPD_CONF` to work on it off-device; without it, the file
-does not exist and the network panel hides itself.
+**The access point is the only way into the box, and the app no longer touches
+it.** `hostapd.conf` lives on the data partition beside the songbook, which is
+exFAT precisely so it can be edited with the card in a laptop. A config hostapd
+rejects is a brick, recoverable only by the `ap-preflight` fallback in the image
+or a serial console, so nothing in the app may write that file — the web
+interface used to and does not any more. Do not add a copy of the SSID to
+`settings.json` either.
 
 **Never write a password anywhere.** `Songbook._adoptPassword` hashes a
 plaintext `password:` out of `settings.json` on load and rewrites the file

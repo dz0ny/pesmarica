@@ -108,7 +108,7 @@ let
 
       if ! valid "$RUNTIME"; then
         echo "pesmarica: $RUNTIME unusable, falling back to the shipped default" >&2
-        install -m 0600 "$DEFAULT" "$RUNTIME"
+        cp "$DEFAULT" "$RUNTIME"
       fi
     '';
   };
@@ -259,6 +259,8 @@ in
     # The AP is the only way in, so it comes up early and independently of the app.
     after = [ "systemd-tmpfiles-setup.service" "sys-subsystem-net-devices-wlan0.device" ];
     bindsTo = [ "sys-subsystem-net-devices-wlan0.device" ];
+    # The config it starts from is on the songbook partition.
+    unitConfig.RequiresMountsFor = "/var/lib/pesmarica";
     before = [ "systemd-networkd.service" ];
 
     serviceConfig = {
@@ -276,6 +278,7 @@ in
     description = "Pesmarica digital signage";
     wantedBy = [ "multi-user.target" ];
     after = [ "systemd-tmpfiles-setup.service" ];
+    unitConfig.RequiresMountsFor = "/var/lib/pesmarica";
 
     # The web interface shells out to `systemctl restart hostapd` after it
     # rewrites the access point config.
@@ -299,12 +302,68 @@ in
     };
   };
 
+  # The songbook lives on its own exFAT partition so the card can be pulled and
+  # the pages edited from any laptop -- which is how a songbook actually gets
+  # updated in a parish hall, rather than over ssh. exFAT has no journal and
+  # weaker rename semantics than ext4, so a power cut mid-write can take out the
+  # directory rather than one file; that is the price of a card Windows and
+  # macOS will both mount.
+  boot.supportedFilesystems = [ "exfat" ];
+
+  # The image ships two partitions and the root one is not grown, so the rest of
+  # the card is free for this. ConditionPathExists means it runs once, ever.
+  sdImage.expandOnBoot = false;
+
+  systemd.services.pesmarica-data = {
+    description = "Create the songbook partition on first boot";
+    wantedBy = [ "local-fs.target" ];
+    before = [ "var-lib-pesmarica.mount" ];
+    unitConfig.ConditionPathExists = "!/dev/disk/by-label/PESMARICA";
+    path = [ pkgs.util-linux pkgs.exfatprogs pkgs.coreutils ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      root=$(findmnt --noheadings --output SOURCE --target /)
+      disk=/dev/$(lsblk --noheadings --output PKNAME "$root" | head -1)
+      [ -b "$disk" ] || { echo "pesmarica: no disk behind $root" >&2; exit 1; }
+
+      # type 7 is the one Windows and macOS both read as exFAT.
+      echo ',,7' | sfdisk --append --no-reread "$disk"
+      partprobe "$disk" || true
+      udevadm settle
+
+      part=$(lsblk --noheadings --output PATH "$disk" | tail -1)
+      mkfs.exfat -L PESMARICA "$part"
+      udevadm settle
+    '';
+  };
+
+  fileSystems."/var/lib/pesmarica" = {
+    device = "/dev/disk/by-label/PESMARICA";
+    fsType = "exfat";
+    # nofail: a card whose data partition never appeared should still boot to a
+    # reachable box with an empty songbook, not drop into an emergency shell.
+    options = [
+      "nofail"
+      "noatime"
+      # exFAT has no permissions of its own, so they come from the mount. The
+      # wifi passphrase sits in hostapd.conf here.
+      "umask=0077"
+      "x-systemd.requires=pesmarica-data.service"
+      "x-systemd.device-timeout=30s"
+    ];
+  };
+
   systemd.tmpfiles.rules = [
     # Seed the songbook once; pages written through the web UI stay put.
     "C /var/lib/pesmarica - - - - ${content}"
     # The access point config lives beside the songbook so the web interface can
     # change it and so it survives a rebuild of the system closure.
-    "C /var/lib/pesmarica/hostapd.conf 0600 root root - ${defaultHostapdConf}"
+    # No mode here: the songbook is exFAT, which has no permissions to set --
+    # the mount's umask covers it instead.
+    "C /var/lib/pesmarica/hostapd.conf - - - - ${defaultHostapdConf}"
   ];
 
   # tty1 belongs to flutter-pi.

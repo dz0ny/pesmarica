@@ -37,6 +37,7 @@ know from PowerPoint — type a number, press Enter.
 ## Highlights
 
 - One markdown file per page, in one folder, with no other source of truth
+- The songbook partition mounts on Windows and macOS, so a card *is* the editor
 - Type a page number and press Enter, exactly like a slide deck
 - Works with a keypad, a presenter remote, a touch screen, or a phone
 - Its own wifi access point, configurable from the web interface
@@ -58,6 +59,7 @@ know from PowerPoint — type a number, press Enter.
 | Web interface | Edit as raw markdown, create and delete pages, drive the screen |
 | Import | Drop `.md` files onto the page list, or images into the editor |
 | Network | Always an access point; every name resolves to the box |
+| Songbook storage | Its own exFAT partition — pull the card and edit on any laptop |
 | Recovery | A rejected access point config is replaced with the shipped default |
 | Security | One password, salted and hashed; cookie or `X-Pesmarica-Auth` header |
 | Appliance | NixOS image with the unit files, network, and paths defined once |
@@ -130,18 +132,30 @@ PESMARICA_CONTENT=$PWD/content flutter run -d macos   # or -d linux
 2. Connect a phone or laptop to the `Pesmarica` network (passphrase `pesmarica`).
 3. Most devices open the songbook by themselves; otherwise go to
    `http://192.168.4.1` or `http://pesmarica.local`.
-4. Open **Omrežje** and change the network name and passphrase.
-5. Rejoin the new network, and put your own pages in.
+4. Put your own pages in, through the web interface or with the card in a laptop.
 
 Out of the box the network is `Pesmarica` / `pesmarica` on channel 6 —
-**change both before it leaves your desk**. Saving restarts the radio and drops
-every connected device, including the one you changed it from.
+**change both before it leaves your desk**. That is done with the card in a
+laptop, by editing `hostapd.conf` in the songbook partition; it is deliberately
+not something the web interface can do, because a name or passphrase hostapd
+refuses to start on would leave nobody a way back in.
 
-If a bad configuration ever does get written, the box does not become a brick:
-`ap-preflight` checks the file before hostapd starts and restores the shipped
-default if the name or passphrase could not work.
+If a bad configuration does get written anyway, the box still does not become a
+brick: `ap-preflight` checks the file before hostapd starts and restores the
+shipped default if the name or passphrase could not work.
 
 ## The songbook is a folder
+
+On the appliance that folder is a separate exFAT partition labelled
+`PESMARICA`, created on first boot from whatever space is left on the card.
+Take the card out, put it in a laptop, and the songbook is right there — which
+is how pages actually get written the evening before, rather than over ssh. The
+access point's `hostapd.conf` sits beside them for the same reason.
+
+The trade is that exFAT has no journal: losing mains power mid-write can damage
+the directory rather than a single file. Pesmarica writes every page through a
+temporary file and a rename to keep that window as small as it can, but a card
+that has been yanked mid-save often enough is a card to replace.
 
 ```text
 content/

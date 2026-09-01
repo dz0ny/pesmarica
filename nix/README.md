@@ -60,7 +60,7 @@ Instead:
 
 | Piece | Job |
 |---|---|
-| hostapd | the radio, from `/var/lib/pesmarica/hostapd.conf` |
+| hostapd | the radio, from `hostapd.conf` on the songbook partition |
 | systemd-networkd | the address `192.168.4.1/24` and the DHCP pool |
 | dnsmasq | every name resolves to the box, so phones open the captive-portal sheet on the songbook |
 
@@ -88,7 +88,15 @@ Delete that directory on the box to go back to the image's own bundle.
 
 The SD card is the part that dies, so in steady state the only thing that
 reaches it is the songbook: the front matter the display stamps as pages are
-shown, and `hostapd.conf` when someone changes the network in the web UI.
+shown, and `hostapd.conf` when someone edits it.
+
+The songbook is not on the root filesystem at all. `pesmarica-data` creates a
+third partition on first boot from the space the image leaves free, formats it
+exFAT and labels it `PESMARICA`; `/var/lib/pesmarica` is that partition. So the
+card can be pulled and the pages edited from any laptop, and the writes the
+display makes never touch the system filesystem. exFAT carries no permissions,
+so they come from the mount instead (`umask=0077`), and it carries no journal,
+so a power cut mid-write can cost more than one file.
 
 Everything else is in RAM -- the journal (`Storage=volatile`, capped at 16M),
 `/tmp`, `/var/log`, and `/var/lib/systemd`, so the random seed and the DHCP

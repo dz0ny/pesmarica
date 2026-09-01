@@ -24,42 +24,8 @@
   </select></label>
   <label><input id="showTitle" type="checkbox"> Naslovi</label>
   <button id="new">Nova stran</button>
-  <button id="network" hidden>Omrežje</button>
   <button id="logout" hidden>Odjava</button>
 </header>
-
-<dialog id="networkDialog">
-  <form method="dialog" id="networkForm">
-    <h2>Wifi omrežje te naprave</h2>
-    <p class="hint">
-      Pesmarica je vedno dostopna točka — nanjo se povežeš, ona se ne poveže nikamor.
-    </p>
-
-    <label for="apSsid">Ime omrežja</label>
-    <input id="apSsid" type="text" maxlength="32" required>
-
-    <label for="apPassphrase">Geslo omrežja</label>
-    <input id="apPassphrase" type="text" minlength="8" maxlength="63"
-           placeholder="pusti prazno, da ostane nespremenjeno">
-    <label class="inline"><input id="apOpen" type="checkbox"> Odprto omrežje, brez gesla</label>
-
-    <label for="apChannel">Kanal</label>
-    <input id="apChannel" type="number" min="1" max="13">
-
-    <label class="inline"><input id="apHidden" type="checkbox"> Skrito omrežje</label>
-
-    <p class="warn">
-      Ob shranjevanju se wifi ponovno zažene in vse naprave se odklopijo,
-      vključno s to. Znova se poveži z novim imenom in geslom.
-    </p>
-    <p id="apError" class="error" hidden></p>
-
-    <menu>
-      <button value="cancel">Prekliči</button>
-      <button id="apSave" value="save" class="primary">Shrani in ponovno zaženi</button>
-    </menu>
-  </form>
-</dialog>
 
 <div id="drophint">Markdown spusti levo na seznam · sliko spusti desno v besedilo</div>
 
