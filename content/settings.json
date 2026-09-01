@@ -1,0 +1,9 @@
+{
+  "theme": "dark",
+  "font": "inter",
+  "baseScale": 1.0,
+  "showChrome": true,
+  "showTitle": true,
+  "httpPort": 8080,
+  "httpEnabled": true
+}

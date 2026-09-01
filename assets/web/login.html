@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="sl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pesmarica</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/login.js" defer></script>
+
+<form id="login" autocomplete="on">
+  <h1>Pesmarica</h1>
+  <label for="password">Geslo</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+  <button type="submit" class="primary">Naprej</button>
+  <p id="error" class="error" hidden>Napačno geslo.</p>
+  <p class="hint">Prijava se zapomni na tej napravi.</p>
+</form>

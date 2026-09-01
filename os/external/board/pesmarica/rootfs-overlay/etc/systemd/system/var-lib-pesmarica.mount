@@ -1,0 +1,11 @@
+[Unit]
+Description=Pesmarica songbook data
+
+[Mount]
+What=/dev/mmcblk0p3
+Where=/var/lib/pesmarica
+Type=ext4
+Options=noatime,nodiratime
+
+[Install]
+WantedBy=multi-user.target

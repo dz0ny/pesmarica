@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="sl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pesmarica</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+
+<header>
+  <h1>Pesmarica</h1>
+  <button id="prev" title="Prejšnja stran na zaslonu">◀</button>
+  <button id="next" title="Naslednja stran na zaslonu">▶</button>
+  <span class="hint" id="live"></span>
+  <span class="grow"></span>
+  <label>Barve <select id="theme"><option value="dark">belo na črnem</option><option value="light">črno na belem</option></select></label>
+  <label>Pisava <select id="font"></select></label>
+  <label>Povečava <input id="baseScale" type="number" min="0.4" max="4" step="0.05" style="width:5.5em"></label>
+  <label><input id="showTitle" type="checkbox"> Naslovi</label>
+  <button id="new">Nova stran</button>
+  <button id="logout" hidden>Odjava</button>
+</header>
+
+<div id="drophint">Markdown spusti levo na seznam · sliko spusti desno v besedilo</div>
+
+<main>
+  <div id="list"></div>
+  <div id="editor">
+    <div id="bar">
+      <strong id="editing">—</strong>
+      <span class="grow"></span>
+      <button id="show">Prikaži na zaslonu</button>
+      <button id="save" class="primary">Shrani <span class="hint">⌘S</span></button>
+      <button id="delete" class="danger">Izbriši</button>
+      <span class="hint">Sliko povleci sem</span>
+    </div>
+    <textarea id="source" spellcheck="false" placeholder="# Naslov pesmi&#10;&#10;Prva kitica ..."></textarea>
+    <div id="status">Izberi stran na levi.</div>
+  </div>
+</main>

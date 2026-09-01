@@ -1,0 +1,5 @@
+# flutterpi_tool compiles against flutter_tools internals, so the SDK version is
+# not a preference -- 3.44.x is the only line it builds against. `flutter
+# upgrade` moving this forward breaks the Pi image build, not just a warning.
+[tools]
+flutter = "3.44.4-stable"

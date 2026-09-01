@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Pesmarica is a kiosk app that reads and writes a songbook folder
+	     anywhere on disk and serves a LAN web interface; the App Sandbox
+	     would block both. It is never distributed through the App Store. -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>
