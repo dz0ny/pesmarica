@@ -380,6 +380,20 @@ in
   # second slot and the firmware's tryboot would want, later.
   boot.loader.raspberry-pi.bootloader = "kernel";
 
+  # The panel is the product, and a congregation should not watch it boot.
+  # Upstream ships loglevel=7 with console=tty1, so every kernel message and
+  # every unit systemd starts scrolls across the screen until flutter-pi takes
+  # it. Errors still reach the serial console for anyone debugging with a
+  # cable; routine progress is gone from both. The screen stays black until
+  # the first frame -- a real splash image is its own piece of work.
+  boot.consoleLogLevel = lib.mkForce 3;
+  boot.initrd.verbose = false;
+  boot.kernelParams = [
+    "quiet"
+    "systemd.show_status=false"
+    "vt.global_cursor_default=0"
+  ];
+
   # /run/opengl-driver. flutter-pi links libgbm and libEGL, and since mesa 25
   # both are thin front ends that find the actual driver -- dri_gbm.so and the
   # EGL vendor file -- through this path and nowhere else. Without it flutter-pi

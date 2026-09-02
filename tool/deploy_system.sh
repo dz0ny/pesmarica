@@ -102,5 +102,18 @@ fi
 ssh "$HOST" "FIRMWARE=$FIRMWARE bash -s" < "$HERE/system_swap.sh"
 
 echo "==> rebooting $HOST"
+# sync, then reboot without asking systemd to tear anything down. A normal
+# shutdown hangs here: /nix/store is a loop device on a file that lives on
+# /boot/firmware, so systemd is told to unmount the filesystem every process
+# on the box is executing from -- and it was just renamed out from under the
+# loop as well. It retries instead of giving up, and the box sits there until
+# somebody pulls the power.
+#
+# Nothing is lost by skipping it. Root is a tmpfs, the store is read-only, and
+# the only writable things are the two FAT partitions, which sync flushes.
+# That is also why sync is separate and first: -ff is reboot(2), immediately,
+# and there is no second chance to write anything after it.
+#
 # The connection dies with the box, which is not a failure.
-ssh "$HOST" "systemctl reboot" || true
+ssh "$HOST" "sync" || true
+ssh "$HOST" "systemctl reboot -ff" || true
