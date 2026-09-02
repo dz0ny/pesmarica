@@ -438,8 +438,8 @@ in
   # Nothing dials out, so there is no clock to sync and nobody to sync with.
   services.timesyncd.enable = false;
 
-  # The base profile brings ZFS in. On a box with 512 MB of RAM and one exFAT
-  # partition it is closure weight and a boot-time warning, nothing else.
+  # The base profile brings ZFS in. On a box with 512 MB of RAM, one ext4 root
+  # and two FAT partitions it is closure weight and a boot-time warning.
   boot.supportedFilesystems.zfs = lib.mkForce false;
 
   # The SD card is the part that dies. Everything that writes continuously is
@@ -741,55 +741,126 @@ in
     };
   };
 
-  # The songbook lives on its own exFAT partition so the card can be pulled and
+  # The songbook lives on its own FAT32 partition so the card can be pulled and
   # the pages edited from any laptop -- which is how a songbook actually gets
-  # updated in a parish hall, rather than over ssh. exFAT has no journal and
-  # weaker rename semantics than ext4, so a power cut mid-write can take out the
-  # directory rather than one file; that is the price of a card Windows and
-  # macOS will both mount.
-  boot.supportedFilesystems.exfat = true;
+  # updated in a parish hall, rather than over ssh. FAT32 rather than exFAT
+  # because it is the only filesystem both a laptop and this build can write:
+  # mtools populates it offline, so the partition ships in the image with the
+  # songbook already in it, and a freshly flashed card shows the pages before
+  # the box has ever been switched on. It has no journal, so a power cut
+  # mid-write can take out the directory rather than one file; that is the price
+  # of a card Windows and macOS will both mount.
+  #
+  # The 4 GB per-file ceiling is not a limit anything here can reach: the pages
+  # are markdown and the pictures are photographs of hymn sheets.
 
-  # The image ships two partitions and the root one is not grown, so the rest of
-  # the card is free for this. ConditionPathExists means it runs once, ever.
+  # The root partition is not grown -- the rest of the card belongs to the
+  # songbook, which pesmarica-data below grows into on the first boot.
   sdImage.expandOnBoot = false;
 
+  # Big enough that mkfs makes a FAT32 rather than quietly falling back to
+  # FAT16 (which needs upwards of 65525 clusters), small enough not to matter
+  # in an image that is mostly zeroes and compresses away to nothing.
+  sdImage.postBuildCommands =
+    let
+      megabytes = 512;
+      clusterSectors = 8; # 4 KiB clusters: a sane FAT once this fills a card.
+    in
+    ''
+      # The songbook partition, appended to the image rather than created on the
+      # first boot. Same recipe as /boot/firmware above, because it is the same
+      # kind of filesystem and the same tools are already here.
+      truncate -s +${toString megabytes}M $img
+      sfdisk --no-reread --no-tell-kernel --append $img <<EOF
+          size=${toString (megabytes * 1024 * 1024 / 512)}, type=c
+      EOF
+
+      eval $(partx $img -o START,SECTORS --nr 3 --pairs)
+      truncate -s $((SECTORS * 512)) songbook_part.img
+      mkfs.vfat --invariant -i 50534d43 -F 32 -s ${toString clusterSectors} \
+        -n PESMARICA songbook_part.img
+
+      mkdir songbook
+      cp -r ${content}/. songbook/
+      # The access point config ships here too, so the name and passphrase of
+      # the network the box hands out can be changed with the card in a laptop
+      # and before it is ever powered on. systemd-tmpfiles puts it back if it
+      # goes missing.
+      cp ${defaultHostapdConf} songbook/hostapd.conf
+      chmod -R u+w songbook
+      find songbook -exec touch --date=2000-01-01 {} +
+
+      cd songbook
+      for d in $(find . -type d -mindepth 1 | sort); do
+        faketime "2000-01-01 00:00:00" mmd -i ../songbook_part.img "::/$d"
+      done
+      for f in $(find . -type f | sort); do
+        mcopy -pvm -i ../songbook_part.img "$f" "::/$f"
+      done
+      cd ..
+
+      fsck.vfat -vn songbook_part.img
+      dd conv=notrunc if=songbook_part.img of=$img seek=$START count=$SECTORS
+    '';
+
   systemd.services.pesmarica-data = {
-    description = "Create the songbook partition on first boot";
+    description = "Grow the songbook partition into the rest of the card";
     wantedBy = [ "local-fs.target" ];
     before = [ "var-lib-pesmarica.mount" ];
-    unitConfig.ConditionPathExists = "!/dev/disk/by-label/PESMARICA";
-    path = [ pkgs.util-linux pkgs.exfatprogs pkgs.coreutils ];
+    # The image's partition ends well short of any card worth flashing it to.
+    # Once it does not, this has nothing left to do and stops running.
+    unitConfig.ConditionPathExists = "!/var/lib/.pesmarica-grown";
+    path = [
+      pkgs.util-linux
+      pkgs.parted
+      pkgs.fatresize
+      pkgs.dosfstools
+      pkgs.coreutils
+    ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
     };
     script = ''
-      root=$(findmnt --noheadings --output SOURCE --target /)
-      disk=/dev/$(lsblk --noheadings --output PKNAME "$root" | head -1)
-      [ -b "$disk" ] || { echo "pesmarica: no disk behind $root" >&2; exit 1; }
+      # Whatever happens here, it happens once: a card that cannot be grown
+      # still holds the songbook the image put on it, and a box that retried
+      # this on every boot would be repartitioning itself in a parish hall.
+      touch /var/lib/.pesmarica-grown
 
-      # type 7 is the one Windows and macOS both read as exFAT.
-      echo ',,7' | sfdisk --append --no-reread "$disk"
+      part=$(readlink -f /dev/disk/by-label/PESMARICA) || exit 0
+      [ -b "$part" ] || { echo "pesmarica: no songbook partition to grow" >&2; exit 0; }
+      disk=/dev/$(lsblk --noheadings --output PKNAME "$part" | head -1)
+      number=$(cat "/sys/class/block/$(basename "$part")/partition")
+
+      echo ",+," | sfdisk -N"$number" --no-reread "$disk"
       partprobe "$disk" || true
       udevadm settle
 
-      part=$(lsblk --noheadings --output PATH "$disk" | tail -1)
-      mkfs.exfat -L PESMARICA "$part"
+      # fatresize will not touch a filesystem that has not been checked, and
+      # the check is worth having anyway on a card that was pulled out of a
+      # laptop mid-copy.
+      fsck.fat -a "$part" || true
+      fatresize -s max "$part"
       udevadm settle
     '';
   };
 
   fileSystems."/var/lib/pesmarica" = {
     device = "/dev/disk/by-label/PESMARICA";
-    fsType = "exfat";
+    fsType = "vfat";
     # nofail: a card whose data partition never appeared should still boot to a
     # reachable box with an empty songbook, not drop into an emergency shell.
     options = [
       "nofail"
       "noatime"
-      # exFAT has no permissions of its own, so they come from the mount. The
+      # FAT has no permissions of its own, so they come from the mount. The
       # wifi passphrase sits in hostapd.conf here.
       "umask=0077"
+      # Pesmarica folds čšž out of the names it writes itself, but the point of
+      # this partition is that a person can drop files on it from a laptop, and
+      # theirs will not be folded. Without this the kernel reads those names as
+      # latin-1 and the songbook shows mojibake.
+      "utf8=1"
       "x-systemd.requires=pesmarica-data.service"
       "x-systemd.device-timeout=30s"
     ];
@@ -800,8 +871,9 @@ in
     "C /var/lib/pesmarica - - - - ${content}"
     # The access point config lives beside the songbook so the web interface can
     # change it and so it survives a rebuild of the system closure.
-    # No mode here: the songbook is exFAT, which has no permissions to set --
-    # the mount's umask covers it instead.
+    # No mode here: the songbook is FAT, which has no permissions to set -- the
+    # mount's umask covers it instead. The image ships this file already; the
+    # rule is what puts it back if it is deleted from a laptop.
     "C /var/lib/pesmarica/hostapd.conf - - - - ${defaultHostapdConf}"
     # The two app slots. Deploys fill them; the launcher above picks between
     # them. Empty on a fresh card, which is how the image's own bundle runs.

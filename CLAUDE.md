@@ -126,10 +126,16 @@ the launcher in the image reads `rotation` out of `settings.json` and passes
 Validate it at both ends — a panel showing a corner of the songbook looks like a
 dead box, and the way back is ssh.
 
-**The songbook partition is exFAT.** That is deliberate: the card can be pulled
-and the pages edited on any laptop. It carries no permissions (they come from
-the mount, `umask=0077`) so nothing may `chmod` there, and no journal, so a
-power cut mid-write can cost more than the file being written.
+**The songbook partition is FAT32, and it ships in the image.** The card can be
+pulled and the pages edited on any laptop -- that is the point -- and FAT32 is
+what makes it possible to put the songbook *into* the image, because `mtools`
+populates it offline and `fatresize` grows it on the first boot. exFAT can do
+neither, which is why it is no longer exFAT. It carries no permissions (they
+come from the mount, `umask=0077`) so nothing may `chmod` there, and no journal,
+so a power cut mid-write can cost more than the file being written. Anything
+added to `sdImage.postBuildCommands` runs unprivileged in the image build: no
+loop devices, no mounting, so a file goes onto that partition through `mcopy`
+and nothing else.
 
 **The web UI lives in `assets/web/`, not in Dart.** It is served through
 `rootBundle`, so any change there needs a restart to show up, and a new file
@@ -188,7 +194,9 @@ same way, silently, until someone reads the boot log.
 
 **The access point is the only way into the box, and the app no longer touches
 it.** `hostapd.conf` lives on the data partition beside the songbook, which is
-exFAT precisely so it can be edited with the card in a laptop. A config hostapd
+FAT32 precisely so it can be edited with the card in a laptop -- and it now
+ships in the image, so the network the box hands out can be renamed before it
+is ever powered on. A config hostapd
 rejects is a brick, recoverable only by the `ap-preflight` fallback in the image
 or a serial console, so nothing in the app may write that file — the web
 interface used to and does not any more. Do not add a copy of the SSID to

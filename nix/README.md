@@ -104,13 +104,15 @@ card every few minutes to record something nobody read; it does not any more.
 What is left is the songbook, written when a human edits a page, and
 `hostapd.conf` when someone changes the network.
 
-The songbook is not on the root filesystem at all. `pesmarica-data` creates a
-third partition on first boot from the space the image leaves free, formats it
-exFAT and labels it `PESMARICA`; `/var/lib/pesmarica` is that partition. So the
-card can be pulled and the pages edited from any laptop, and the writes the
-display makes never touch the system filesystem. exFAT carries no permissions,
-so they come from the mount instead (`umask=0077`), and it carries no journal,
-so a power cut mid-write can cost more than one file.
+The songbook is not on the root filesystem at all. The image carries a third
+partition labelled `PESMARICA` -- FAT32, 512 MiB, with the songbook and
+`hostapd.conf` already written into it by `mtools` at build time -- and
+`pesmarica-data` grows it into the rest of the card on the first boot with
+`fatresize`, once, ever. `/var/lib/pesmarica` is that partition. So a freshly
+flashed card already shows the pages on any laptop, and the writes the display
+makes never touch the system filesystem. FAT carries no permissions, so they
+come from the mount instead (`umask=0077`), and it carries no journal, so a
+power cut mid-write can cost more than one file.
 
 Everything else is in RAM -- the journal (`Storage=volatile`, capped at 16M),
 `/tmp`, `/var/log`, and `/var/lib/systemd`, so the random seed and the DHCP

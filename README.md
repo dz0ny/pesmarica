@@ -60,7 +60,7 @@ know from PowerPoint — type a number, press Enter.
 | Web interface | Formatting toolbar, live preview, create, renumber and delete pages |
 | Import | Drop `.md` files onto the page list, or images into the editor |
 | Network | Always an access point; every name resolves to the box |
-| Songbook storage | Its own exFAT partition — pull the card and edit on any laptop |
+| Songbook storage | Its own FAT32 partition — pull the card and edit on any laptop |
 | Recovery | A rejected access point config is replaced with the shipped default |
 | Security | One password over editing, salted and hashed; cookie or `X-Pesmarica-Auth` header |
 | Appliance | NixOS image with the unit files, network, and paths defined once |
@@ -212,13 +212,16 @@ shipped default if the name or passphrase could not work.
 
 ## The songbook is a folder
 
-On the appliance that folder is a separate exFAT partition labelled
-`PESMARICA`, created on first boot from whatever space is left on the card.
-Take the card out, put it in a laptop, and the songbook is right there — which
-is how pages actually get written the evening before, rather than over ssh. The
-access point's `hostapd.conf` sits beside them for the same reason.
+On the appliance that folder is a separate FAT32 partition labelled
+`PESMARICA`. It is part of the image, so it is there the moment the card is
+flashed, with the songbook already in it; the first boot only grows it into
+whatever space is left on the card. Take the card out, put it in a laptop, and
+the songbook is right there — which is how pages actually get written the
+evening before, rather than over ssh. The access point's `hostapd.conf` sits
+beside them for the same reason, and can be changed before the box is ever
+switched on.
 
-The trade is that exFAT has no journal: losing mains power mid-write can damage
+The trade is that FAT32 has no journal: losing mains power mid-write can damage
 the directory rather than a single file. Pesmarica writes every page through a
 temporary file and a rename to keep that window as small as it can, but a card
 that has been yanked mid-save often enough is a card to replace.
