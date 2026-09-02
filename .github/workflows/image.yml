@@ -153,11 +153,18 @@ jobs:
       # ~1.5 GiB of zeroes, so nothing but the closure moves the number.
       - name: Closure
         working-directory: nix
+        # pipefail because the interesting command is not the last one in the
+        # pipeline: without it a broken `nix path-info` exits 1, numfmt exits 0,
+        # and the step passes having printed nothing. `head` goes last for the
+        # same reason -- closing the pipe early would SIGPIPE sort and fail the
+        # step for no reason.
         run: |
+          set -euo pipefail
           nix build "path:$PWD#nixosConfigurations.pesmarica.config.system.build.toplevel" \
             --out-link sys
-          echo "closure: $(nix path-info -Sh sys | awk '{print $2}')"
-          nix path-info -rS sys | sort -k2 -nr | head -25 | numfmt --to=iec --field=2
+          echo "closure: $(nix path-info -Sh ./sys | awk '{print $2}')"
+          nix path-info -rS ./sys | sort -k2 -nr | numfmt --to=iec --field=2 > closure.txt
+          head -25 closure.txt
 
       # The image is ~2 GiB, of which ~600 MiB is the closure's squashfs and the
       # rest is zeroes. The zeroes vanish under any compressor at any level;
