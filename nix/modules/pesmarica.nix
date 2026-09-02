@@ -44,6 +44,12 @@ let
     if [ -r "$settings" ]; then
       rotation=$(${pkgs.jq}/bin/jq -r '.rotation // 0' "$settings" 2>/dev/null || echo 0)
     fi
+    # A rotation on the boot partition wins: it is the one you can set on a
+    # card, for a screen that has never been readable enough to reach the web
+    # interface on. Delete the line to hand the setting back to the web UI.
+    if [ -r ${rotationFile} ]; then
+      read -r rotation < ${rotationFile} || rotation=0
+    fi
     case "$rotation" in
       0|90|180|270) ;;
       # Anything else would put the picture off the panel, and the box would
@@ -146,6 +152,159 @@ let
     macaddr_acl=0
     ignore_broadcast_ssid=0
   '';
+
+  # Where the box keeps what it worked out at boot. tmpfs: a wifi passphrase,
+  # hashed or not, has no business being written to a card.
+  runtimeDir = "/run/pesmarica";
+  clientMarker = "${runtimeDir}/client";
+  supplicantConf = "${runtimeDir}/wpa_supplicant.conf";
+  rotationFile = "${runtimeDir}/rotation";
+
+  # networkd applies the first .network that matches, in lexical order across
+  # /run and /etc together, so a 10- file dropped here wins over the access
+  # point's 20-wlan below without either knowing about the other.
+  clientNetwork = "/run/systemd/network/10-wlan-client.network";
+
+  # How long a configured network gets to hand out a lease before the box gives
+  # up and becomes an access point instead. It is the window in which a screen
+  # in a hall with no wifi is unreachable, so it is short.
+  joinTimeout = 45;
+
+  # How the box is set up before it has ever been switched on: files on the
+  # boot partition -- the FAT one, which is the only partition a freshly
+  # flashed card has, and the one both Windows and macOS mount by themselves.
+  # One file per thing it configures, next to the firmware's own config.txt.
+  #
+  #   wifi.conf      ssid=Zupnija        the network to join instead of being one
+  #                  psk=nekogeslo       8..63 characters, or absent for an open network
+  #                  country=SI          the regulatory domain to scan in
+  #
+  #   display.conf   rotation=90         0, 90, 180 or 270
+  #
+  # Rotation is here rather than in the firmware's own config.txt because the
+  # picture goes through vc4-kms-v3d, and the KMS driver ignores the
+  # display_rotate that the old firmware path honoured. flutter-pi takes it as
+  # a startup flag instead, so the value is handed to the launcher above.
+  #
+  # Anything unusable is ignored with a line in the journal rather than taken
+  # half-applied: the alternative to an access point is a box nobody can reach,
+  # and the alternative to a readable screen is a box nobody can read.
+  #
+  # Every boot reads these again and nothing consumes them, so carrying the box
+  # from a house with wifi to a hall without one needs nobody to touch the card.
+  bootConfig = pkgs.writeShellApplication {
+    name = "pesmarica-boot-config";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.gnused
+      pkgs.gnugrep
+      pkgs.wpa_supplicant
+    ];
+    text = ''
+      WIFI=/boot/firmware/wifi.conf
+      DISPLAY_CONF=/boot/firmware/display.conf
+
+      mkdir -p ${runtimeDir} /run/systemd/network
+      # Boot from a clean slate: whatever the last boot decided says nothing
+      # about this one, and a leftover marker would keep the AP down.
+      rm -f ${supplicantConf} ${clientNetwork} ${clientMarker} ${rotationFile}
+
+      # These are written on a laptop, so a CRLF line ending and a UTF-8 BOM
+      # are both normal. A value is everything after the first '=', which is
+      # what lets a passphrase contain one.
+      value() { # value <file> <key>
+        [ -r "$1" ] || return 0
+        sed -e '1s/^\xEF\xBB\xBF//' "$1" \
+          | sed -n "s/^$2=//p" \
+          | head -1 \
+          | tr -d '\r'
+      }
+
+      # -- the screen ------------------------------------------------------
+
+      rotation=$(value "$DISPLAY_CONF" rotation)
+      case "$rotation" in
+        # Written for the launcher, which prefers it over the one in
+        # settings.json: this is the rotation you can set on a card, for a
+        # screen nobody has ever been able to read the web interface on.
+        0 | 90 | 180 | 270) printf '%s\n' "$rotation" > ${rotationFile} ;;
+        "") ;;
+        *) echo "pesmarica: $DISPLAY_CONF asks for rotation $rotation, which is not 0, 90, 180 or 270" >&2 ;;
+      esac
+
+      # -- the radio -------------------------------------------------------
+
+      ssid=$(value "$WIFI" ssid)
+      psk=$(value "$WIFI" psk)
+      country=$(value "$WIFI" country)
+
+      if [ -z "$ssid" ]; then
+        echo "pesmarica: no network in $WIFI, staying an access point" >&2
+        exit 0
+      fi
+
+      # 1..32 bytes, per 802.11.
+      if [ "$(printf %s "$ssid" | wc -c)" -gt 32 ]; then
+        echo "pesmarica: the ssid in $WIFI is too long, staying an access point" >&2
+        exit 0
+      fi
+
+      if [ -n "$psk" ]; then
+        len=$(printf %s "$psk" | wc -c)
+        if [ "$len" -lt 8 ] || [ "$len" -gt 63 ]; then
+          echo "pesmarica: $WIFI has a passphrase wpa_supplicant will not take, staying an access point" >&2
+          exit 0
+        fi
+      fi
+
+      umask 077
+      {
+        echo "# Generated at boot from $WIFI. Lives in tmpfs, never on a card."
+        echo "ctrl_interface=/run/wpa_supplicant"
+        if [ -n "$country" ]; then
+          echo "country=$country"
+        fi
+      } > ${supplicantConf}
+
+      if [ -n "$psk" ]; then
+        # wpa_passphrase hashes it, and also prints the plaintext in a comment;
+        # drop that line so the only cleartext copy is the one on the card.
+        # scan_ssid: a hidden network answers a directed probe and nothing else.
+        wpa_passphrase "$ssid" "$psk" \
+          | grep -v '^[[:space:]]*#psk=' \
+          | sed 's/^network={$/network={\n\tscan_ssid=1/' >> ${supplicantConf}
+      else
+        {
+          echo "network={"
+          echo "	ssid=\"$ssid\""
+          echo "	scan_ssid=1"
+          echo "	key_mgmt=NONE"
+          echo "}"
+        } >> ${supplicantConf}
+      fi
+
+      cat > ${clientNetwork} <<EOF
+      [Match]
+      Name=wlan0
+
+      [Network]
+      DHCP=ipv4
+      # How the box is found once it is a guest on someone else's network:
+      # pesmarica.local, the same name as on its own.
+      MulticastDNS=yes
+      IPv6AcceptRA=no
+
+      [DHCPv4]
+      UseNTP=no
+      EOF
+      # networkd reads its configuration as systemd-network, not as root, and
+      # the umask above would leave this unreadable to it.
+      chmod 0644 ${clientNetwork}
+
+      touch ${clientMarker}
+      echo "pesmarica: joining \"$ssid\"; the access point stays down" >&2
+    '';
+  };
 
   # Second line of defence behind the web interface's own validation: a
   # half-written file after a power cut, a hand-edit over SSH, or a future bug.
@@ -250,6 +409,13 @@ in
       # dnsmasq owns :53 on wlan0; resolved must not try to claim it.
       DNSStubListener = "no";
     };
+  };
+
+  # The captive portal belongs to the access point: on someone else's network
+  # the box is a guest, and a guest that answers every name is a nuisance.
+  systemd.services.dnsmasq = {
+    after = [ "pesmarica-boot-config.service" ];
+    unitConfig.ConditionPathExists = "!${clientMarker}";
   };
 
   services.dnsmasq = {
@@ -386,11 +552,22 @@ in
     description = "Pesmarica access point";
     wantedBy = [ "multi-user.target" ];
     # The AP is the only way in, so it comes up early and independently of the app.
-    after = [ "systemd-tmpfiles-setup.service" "sys-subsystem-net-devices-wlan0.device" ];
+    after = [
+      "systemd-tmpfiles-setup.service"
+      "sys-subsystem-net-devices-wlan0.device"
+      "pesmarica-boot-config.service"
+    ];
     bindsTo = [ "sys-subsystem-net-devices-wlan0.device" ];
-    # The config it starts from is on the songbook partition.
-    unitConfig.RequiresMountsFor = "/var/lib/pesmarica";
+    unitConfig = {
+      # The config it starts from is on the songbook partition.
+      RequiresMountsFor = "/var/lib/pesmarica";
+      # One radio: the box is either a network or on one. The marker says which,
+      # and the fallback below removes it and starts this unit by hand when the
+      # network it was told to join does not materialise.
+      ConditionPathExists = "!${clientMarker}";
+    };
     before = [ "systemd-networkd.service" ];
+    conflicts = [ "wpa_supplicant.service" ];
 
     serviceConfig = {
       Type = "simple";
@@ -403,20 +580,152 @@ in
     };
   };
 
+  # Runs before anything touches the radio and decides which of the two the box
+  # is this boot. Everything downstream reads the marker it leaves behind.
+  systemd.services.pesmarica-boot-config = {
+    description = "Read the preconfiguration off the boot partition";
+    wantedBy = [ "sysinit.target" ];
+    wants = [ "network-pre.target" ];
+    before = [ "network-pre.target" ];
+    after = [ "local-fs.target" ];
+    unitConfig.RequiresMountsFor = "/boot/firmware";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = lib.getExe bootConfig;
+    };
+  };
+
+  # NixOS has a wpa_supplicant module, but like hostapd above it renders an
+  # immutable config into the store, and this one is written at boot from a file
+  # somebody dropped on the card. So: by hand, against the runtime copy.
+  systemd.services.wpa_supplicant = {
+    description = "Join the configured wifi network";
+    wantedBy = [ "multi-user.target" ];
+    after = [
+      "pesmarica-boot-config.service"
+      "sys-subsystem-net-devices-wlan0.device"
+    ];
+    bindsTo = [ "sys-subsystem-net-devices-wlan0.device" ];
+    unitConfig.ConditionPathExists = supplicantConf;
+    conflicts = [ "hostapd.service" ];
+    serviceConfig = {
+      Type = "simple";
+      ExecStart = "${pkgs.wpa_supplicant}/bin/wpa_supplicant -i wlan0 -c ${supplicantConf}";
+      # An access point that comes back after the router does is worth more than
+      # a clean failure: the box is on a wall and nobody is going to restart it.
+      Restart = "always";
+      RestartSec = 2;
+    };
+  };
+
+  # The half that makes the whole thing safe to try. A wrong passphrase, a
+  # router that has been replaced, a hall with no wifi at all: after a
+  # ${toString joinTimeout} second wait the box goes back to being an access
+  # point, which is the state someone standing next to it can do something
+  # about. It runs again on the next boot, so carrying the box between a house
+  # with wifi and a hall without one needs nobody to touch the card.
+  systemd.services.pesmarica-wifi-fallback = {
+    description = "Fall back to the access point if the network never comes up";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "wpa_supplicant.service" "systemd-networkd.service" ];
+    unitConfig = {
+      ConditionPathExists = clientMarker;
+      RequiresMountsFor = "/boot/firmware";
+    };
+    path = [ pkgs.systemd pkgs.coreutils ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      status=/boot/firmware/wifi.status
+
+      # Written only when it changes: a boot that goes the way the last one did
+      # leaves the card alone, and one that does not leaves an explanation on
+      # the partition any laptop can read -- which is the whole diagnostic
+      # story for a box that is not answering on the network it was told to
+      # join and no longer has an access point to ask.
+      record() {
+        [ "$(cat "$status" 2>/dev/null || true)" = "$1" ] || printf '%s\n' "$1" > "$status" || true
+      }
+
+      if ${config.systemd.package}/lib/systemd/systemd-networkd-wait-online \
+          --interface=wlan0:routable --timeout=${toString joinTimeout}; then
+        echo "pesmarica: on the configured network" >&2
+        record "joined, $(date -Is)"
+        exit 0
+      fi
+
+      echo "pesmarica: no address after ${toString joinTimeout}s, falling back to the access point" >&2
+      record "could not join, running as the access point instead"
+
+      # Order matters: the radio has to stop being a client before it can be an
+      # access point, and networkd must forget the client address before it
+      # applies the static one.
+      rm -f ${clientMarker} ${clientNetwork} ${supplicantConf}
+      systemctl stop wpa_supplicant.service
+      systemctl start hostapd.service
+      networkctl reload
+      networkctl reconfigure wlan0
+      systemctl start dnsmasq.service
+    '';
+  };
+
+  # The same decision the boot makes, made again on demand: the web interface
+  # writes wifi.conf and starts this. It is one unit rather than the app doing
+  # the steps itself, because the app is the thing that goes away when the radio
+  # does -- and because the boot and a change from a phone must not be able to
+  # drift apart.
+  systemd.services.pesmarica-network-apply = {
+    description = "Apply a change to wifi.conf without a reboot";
+    unitConfig.RequiresMountsFor = "/boot/firmware";
+    path = [ pkgs.systemd pkgs.coreutils ];
+    serviceConfig = {
+      Type = "oneshot";
+    };
+    script = ''
+      ${lib.getExe bootConfig}
+
+      if [ -e ${clientMarker} ]; then
+        systemctl stop dnsmasq.service hostapd.service
+        systemctl start wpa_supplicant.service
+      else
+        systemctl stop wpa_supplicant.service
+        systemctl start hostapd.service
+        systemctl start dnsmasq.service
+      fi
+      networkctl reload
+      networkctl reconfigure wlan0
+
+      # Re-arm the way back. Joining from a phone is the same gamble as joining
+      # at boot -- the network may not be there -- so it gets the same watchdog,
+      # and --no-block because that watchdog waits ${toString joinTimeout}s.
+      systemctl restart --no-block pesmarica-wifi-fallback.service
+    '';
+  };
+
   systemd.services.pesmarica = {
     description = "Pesmarica digital signage";
     wantedBy = [ "multi-user.target" ];
     after = [ "systemd-tmpfiles-setup.service" ];
-    unitConfig.RequiresMountsFor = "/var/lib/pesmarica";
+    unitConfig.RequiresMountsFor = [
+      "/var/lib/pesmarica"
+      # wifi.conf and display.conf: the web interface edits both.
+      "/boot/firmware"
+    ];
 
-    # systemctl: the web interface restarts hostapd after it rewrites the access
-    # point config, and restarts this unit onto a bundle it has just installed.
-    # tar and gzip: unpacking that bundle.
+    # systemctl: the web interface applies a network change and restarts this
+    # unit onto a bundle it has just installed. tar and gzip: unpacking that
+    # bundle.
     path = [ pkgs.systemd pkgs.gnutar pkgs.gzip ];
 
     serviceConfig = {
       Type = "simple";
-      Environment = "PESMARICA_CONTENT=/var/lib/pesmarica";
+      Environment = [
+        "PESMARICA_CONTENT=/var/lib/pesmarica"
+        "PESMARICA_BOOT=/boot/firmware"
+      ];
       ExecStart = launch;
       Restart = "always";
       RestartSec = 2;

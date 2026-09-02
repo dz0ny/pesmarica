@@ -7,6 +7,7 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 
+import '../data/boot_config.dart';
 import '../data/presenter.dart';
 import '../data/songbook.dart';
 import '../model/settings.dart';
@@ -22,10 +23,15 @@ import 'static_assets.dart';
 /// It writes plain markdown into the content folder; the display picks the
 /// change up through the file watcher, so there is no second source of truth.
 class AdminServer {
-  AdminServer(this.songbook, this.presenter);
+  AdminServer(this.songbook, this.presenter, {BootConfig? boot})
+    : boot = boot ?? BootConfig.fromEnvironment();
 
   final Songbook songbook;
   final Presenter presenter;
+
+  /// The two files on the boot partition. What can be typed onto a card before
+  /// the box has ever been switched on is also editable from here.
+  final BootConfig boot;
 
   final StaticAssets _assets = StaticAssets();
 
@@ -197,6 +203,8 @@ class AdminServer {
       return _json(_remoteState());
     })
     ..put('/api/settings', _putSettings)
+    ..get('/api/network', (Request r) => _json(_network()))
+    ..put('/api/network', _putNetwork)
     ..post('/api/update', _installBundle)
     ..post('/api/images', _uploadImage)
     ..get('/media/<name|[^/]+>', _media)
@@ -459,6 +467,102 @@ class AdminServer {
     }
   }
 
+  // --- The network --------------------------------------------------------
+
+  /// What `wifi.conf` on the boot partition says, plus whatever the last boot
+  /// made of it. Never the passphrase.
+  Map<String, Object?> _network() => <String, Object?>{
+    'available': boot.available,
+    'wifi': boot.readWifi().toJson(),
+    'status': _joinStatus(),
+  };
+
+  /// The line `pesmarica-wifi-fallback.service` leaves on the card when a
+  /// configured network does not come up. It is the only account of why a box
+  /// is answering on its own access point instead of the network it was told to
+  /// join, so the page shows it rather than making the operator guess.
+  String? _joinStatus() {
+    try {
+      final file = File(p.join(boot.root.path, 'wifi.status'));
+      if (!file.existsSync()) return null;
+      final text = file.readAsStringSync().trim();
+      return text.isEmpty ? null : text;
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Points the box at a network, or empties the ssid to make it one again.
+  ///
+  /// The passphrase is only replaced when the body carries one: the page never
+  /// receives it, so it cannot send it back, and re-typing it to change the
+  /// country would be a trap. The checks are the ones wpa_supplicant would make
+  /// -- anything it would refuse leaves the box unreachable, with the card the
+  /// only way back.
+  Future<Response> _putNetwork(Request request) async {
+    if (!boot.available) {
+      return _json(<String, Object?>{
+        'error': 'Ta naprava nima zagonskega razdelka.',
+      }, status: 409);
+    }
+    final body = await _readJson(request);
+    final previous = boot.readWifi();
+    final ssid = '${body['ssid'] ?? previous.ssid}'.trim();
+    final country = '${body['country'] ?? previous.country}'.trim();
+    final passphrase = body.containsKey('psk')
+        ? '${body['psk'] ?? ''}'
+        : previous.passphrase;
+
+    if (utf8.encode(ssid).length > 32) {
+      return _json(<String, Object?>{
+        'error': 'Ime omrežja je lahko dolgo največ 32 znakov.',
+      }, status: 400);
+    }
+    if (ssid.isNotEmpty && passphrase.isNotEmpty) {
+      final length = utf8.encode(passphrase).length;
+      if (length < 8 || length > 63) {
+        return _json(<String, Object?>{
+          'error': 'Geslo omrežja mora imeti med 8 in 63 znakov.',
+        }, status: 400);
+      }
+    }
+
+    try {
+      await boot.writeWifi(
+        WifiConfig(ssid: ssid, passphrase: passphrase, country: country),
+      );
+    } on Object catch (e) {
+      debugPrint('pesmarica: could not write wifi.conf: $e');
+      return _json(<String, Object?>{
+        'error': 'Nastavitve omrežja ni bilo mogoče shraniti.',
+      }, status: 500);
+    }
+
+    // Answer first: applying this takes the radio down, and on the access point
+    // that is the connection this reply is travelling on.
+    Future<void>.delayed(const Duration(milliseconds: 300), _applyNetwork);
+    return _json(_network());
+  }
+
+  /// Hands the change to the unit that owns the radio. It re-reads the same
+  /// files the boot does and moves the box between being a network and being on
+  /// one -- including the fallback, so a network that does not answer still
+  /// brings the access point back without anyone touching the box.
+  Future<void> _applyNetwork() async {
+    try {
+      final result = await Process.run('systemctl', <String>[
+        'start',
+        '--no-block',
+        'pesmarica-network-apply.service',
+      ]);
+      if (result.exitCode != 0) {
+        debugPrint('pesmarica: network apply failed: ${result.stderr}');
+      }
+    } catch (e) {
+      debugPrint('pesmarica: could not apply the network settings: $e');
+    }
+  }
+
   Response _show(Request request, String number) {
     final ok = presenter.goToNumber(int.parse(number));
     return _json(<String, Object?>{'ok': ok, ..._remoteState()});
@@ -481,6 +585,16 @@ class AdminServer {
     // Rotation is a flutter-pi startup flag, so the display has to come back up
     // to apply it. Answer first: the restart takes this server down with it.
     if (next.rotation != previous.rotation) {
+      // The launcher reads display.conf before settings.json, because that is
+      // the copy you can put on a card for a screen nobody can read yet. Keep
+      // it in step here or the box would turn back on the next boot.
+      if (boot.available) {
+        try {
+          await boot.writeRotation(next.rotation);
+        } on Object catch (e) {
+          debugPrint('pesmarica: could not write the rotation to the card: $e');
+        }
+      }
       Future<void>.delayed(const Duration(milliseconds: 300), _restartDisplay);
     }
     return _json(_state());

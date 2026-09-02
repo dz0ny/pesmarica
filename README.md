@@ -185,6 +185,21 @@ PESMARICA_CONTENT=$PWD/content flutter run -d macos   # or -d linux
    `http://192.168.4.1` or `http://pesmarica.local`.
 4. Put your own pages in, through the web interface or with the card in a laptop.
 
+Two of these can be settled before the box is ever switched on, by dropping
+files on the boot partition of a freshly flashed card — it is FAT, so Windows
+and macOS both mount it, and it is there before the songbook partition even
+exists:
+
+| File | Keys | What it does |
+| --- | --- | --- |
+| `wifi.conf` | `ssid`, `psk`, `country` | joins that network instead of being one |
+| `display.conf` | `rotation` | starts the picture at 0, 90, 180 or 270° |
+
+Both are read again on every boot and neither is consumed, and both are editable
+later from the web interface. A value the box cannot use is ignored rather than
+half-applied — the alternative to a working access point is a box nobody can
+reach, and the alternative to a readable screen is a box nobody can read.
+
 Out of the box the network is `Pesmarica` / `pesmarica` on channel 6 —
 **change both before it leaves your desk**. That is done with the card in a
 laptop, by editing `hostapd.conf` in the songbook partition; it is deliberately
@@ -274,14 +289,39 @@ the same. Tapping the right or left half of a touch screen also pages.
 
 ## The box is the network
 
-The appliance is always a wifi access point and never a client. It does not join
-your wifi — there usually isn't any in the rooms this ends up in, and a screen
-that waits for an uplink is a screen that stays blank when the uplink is not
-there.
+By default the appliance is a wifi access point rather than a client. There
+usually isn't any wifi in the rooms this ends up in, and a screen that waits for
+an uplink is a screen that stays blank when the uplink is not there.
 
 So: power it on, connect a phone or laptop to its network, and the songbook's
 web interface is there. Every name resolves to the box, so most devices pop the
 sign-in sheet open on it by themselves.
+
+Where there *is* wifi — a hall with a router, a screen you would rather reach
+from your desk — the box will join it instead. Put a `wifi.conf` on the boot
+partition, which is the FAT one a laptop mounts the moment the card is flashed:
+
+```
+ssid=Zupnija
+psk=nekogeslo
+country=SI
+```
+
+or set the same thing from **Omrežje** in the web interface, which writes that
+file for you and moves the radio without a reboot. Leave the passphrase out for
+an open network. Joined, the box has no network of its own and is reached at
+`http://pesmarica.local:8080` on the network it joined.
+
+Nothing about this can strand the box. If the network does not hand out an
+address within 45 seconds — wrong passphrase, router replaced, hall with no wifi
+at all — the box gives up and puts its own access point back up, and leaves a
+line in `wifi.status` on the same partition saying so. The decision is made
+again on every boot, so a box carried from a house with wifi to a hall without
+one needs nobody to touch the card.
+
+The songbook's own access point is separate and stays as it is: it is
+`hostapd.conf` on the songbook partition, editable only with the card in a
+laptop.
 
 ## Web interface
 
@@ -325,6 +365,13 @@ Signage panels are often mounted sideways, so **Zasuk** turns the picture 90,
 itself: it is a flutter-pi startup flag, so saving it restarts the display. The
 screen goes black for a moment and comes back turned; the web interface is not
 interrupted. Off the box -- a desktop run -- the setting is stored and ignored.
+
+It is kept in `display.conf` on the boot partition rather than in the songbook,
+because which way up a panel is bolted is a fact about that screen and not about
+the songbook you rsync onto it. That is also the copy you can set on a card for
+a screen nobody can read the web interface on yet; the box adopts it at startup,
+so the two never disagree. The Pi's own `display_rotate` in `config.txt` is not
+the knob here — the picture goes through the KMS driver, which ignores it.
 
 ### Changing the running order
 
@@ -455,6 +502,15 @@ All are SIL Open Font License; the licences ship in `assets/fonts/`.
 
 ```bash
 flutter test
+```
+
+Two things run outside the Dart suite, because they are shell that has to work
+when the app does not: the launcher's A/B slot picking and the boot-partition
+preconfiguration. Both are lifted out of `nix/modules/pesmarica.nix` and run
+against stub files, so neither needs a Pi:
+
+```bash
+./tool/test_launcher.sh && ./tool/test_boot_config.sh
 ```
 
 The web interface is served from `assets/web/` through the Flutter asset bundle,

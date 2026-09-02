@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import 'src/data/boot_config.dart';
 import 'src/data/presenter.dart';
 import 'src/data/songbook.dart';
 import 'src/ui/presenter_screen.dart';
@@ -32,8 +33,19 @@ Future<void> main() async {
   final songbook = Songbook(resolveContentRoot());
   await songbook.start();
 
+  // A rotation on the boot partition is what the launcher started flutter-pi
+  // with, so it is the truth about which way up the screen is. Take it over the
+  // one in settings.json, or the web interface would offer to "change" a
+  // rotation the box is not using. Only when they disagree: a boot that agrees
+  // writes nothing.
+  final boot = BootConfig.fromEnvironment();
+  final rotation = boot.readRotation();
+  if (rotation != null && rotation != songbook.settings.rotation) {
+    await songbook.saveSettings(songbook.settings.copyWith(rotation: rotation));
+  }
+
   final presenter = Presenter(songbook);
-  final admin = AdminServer(songbook, presenter);
+  final admin = AdminServer(songbook, presenter, boot: boot);
   await admin.start();
 
   runApp(PesmaricaApp(presenter: presenter, admin: admin));

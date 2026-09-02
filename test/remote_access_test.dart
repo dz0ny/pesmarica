@@ -87,6 +87,12 @@ void main() {
     expect((await call('PUT', '/api/settings')).statusCode, 401);
     expect((await call('POST', '/api/update')).statusCode, 401);
     expect((await call('POST', '/api/images?name=a.png')).statusCode, 401);
+    // The radio is the way into the room. Reading which network the box is on
+    // is as gated as changing it: an ssid is a small thing to hand out, but it
+    // is on the same side of the door as everything else that is not the
+    // remote.
+    expect((await call('GET', '/api/network')).statusCode, 401);
+    expect((await call('PUT', '/api/network')).statusCode, 401);
   });
 
   test('the management page sends you to the unlock screen', () async {

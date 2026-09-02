@@ -161,13 +161,42 @@ selected by `data-skin` on `<html>` -- set by an inline script in each page
 before the stylesheet paints. A literal hex anywhere else is a bug: it will look
 right in one skin and wrong in the other.
 
+**The boot partition is the preconfiguration surface, and it is parsed twice.**
+`wifi.conf` and `display.conf` on the FAT partition are the only settings that
+exist before the box has ever been switched on. They are read by
+`pesmarica-boot-config.service` in shell at boot, and by `BootConfig` in Dart so
+the web interface can change them -- the same format from two ends, so a change
+to one needs the other. `tool/test_boot_config.sh` covers the shell side and
+`test/boot_config_test.dart` the Dart side; the cases are deliberately the same
+ones. What makes it safe to point the box at a network from a phone is
+`pesmarica-wifi-fallback.service`: no address in 45 seconds and the access point
+comes back. Anything new that can take the radio away has to keep that way back.
+
+**Rotation lives on the boot partition, not in the songbook.** `display.conf` is
+what the launcher hands flutter-pi, and `settings.json` only mirrors it so the
+web interface has something to show; `main.dart` adopts the card's value at
+startup when the two disagree. Write both or neither -- `_putSettings` does --
+or the box turns back on the next boot. `config.txt`'s own `display_rotate` is
+not a third place to look: the KMS driver ignores it.
+
+**Read-only `/etc` breaks anything that expects to write there.**
+`system.etc.overlay.mutable = false` is why `services.openssh.hostKeys` points
+at `/var/lib/ssh` and why `register-nix-paths` has its script overridden -- both
+upstream units write into `/etc` and fail, and the sshd one costs you ssh, which
+is the recovery path. A new unit that wants to write to `/etc` will fail the
+same way, silently, until someone reads the boot log.
+
 **The access point is the only way into the box, and the app no longer touches
 it.** `hostapd.conf` lives on the data partition beside the songbook, which is
 exFAT precisely so it can be edited with the card in a laptop. A config hostapd
 rejects is a brick, recoverable only by the `ap-preflight` fallback in the image
 or a serial console, so nothing in the app may write that file — the web
 interface used to and does not any more. Do not add a copy of the SSID to
-`settings.json` either.
+`settings.json` either. `wifi.conf` on the boot partition is a different file
+with the opposite rule: it says which network to *join*, the app does write it,
+and hostapd never reads it -- a name typed into a phone can leave the box
+looking for a network that is not there, which the fallback undoes, but it can
+never leave hostapd unable to start.
 
 **Never write a password anywhere.** `Songbook._adoptPassword` hashes a
 plaintext `password:` out of `settings.json` on load and rewrites the file
@@ -236,6 +265,9 @@ over a temp songbook — fast, and where most logic belongs.
 `test/render_test.dart` and `test/title_test.dart` are widget tests over a real
 `PresenterScreen`. `test/bundle_slots_test.dart` covers the update slots, and
 `tool/test_launcher.sh` covers the rollback side of them in shell.
+`test/network_api_test.dart` pins what the web interface may write to the boot
+partition -- above all that a passphrase wpa_supplicant would refuse is refused
+while there is still somebody connected to be told about it.
 `test/remote_access_test.dart` starts a real server on a temp songbook and
 pins which routes need the password -- note that it has to null out
 `HttpOverrides.global`, because the test binding stubs `HttpClient` into

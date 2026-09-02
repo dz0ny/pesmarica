@@ -24,6 +24,7 @@ trap 'rm -rf "$WORK"' EXIT
 SLOTS="$WORK/bundles"
 STORE_BUNDLE="$WORK/store-bundle"
 LAUNCHED="$WORK/launched"
+ARGV="$WORK/argv"
 
 # --- Render the launcher --------------------------------------------------
 
@@ -52,20 +53,23 @@ sed \
 	-e 's|\${toString trialAttempts}|3|g' \
 	-e "s|\${lib.getExe flutter-pi}|$WORK/flutter-pi-stub|g" \
 	-e "s|\${bundle}|$STORE_BUNDLE|g" \
+	-e "s|\${rotationFile}|$WORK/rotation|g" \
 	"$BODY.raw" > "$BODY"
 
 # Anything still referring to the Nix side would be tested as a literal string,
 # which is worse than not testing it. Shell expansions survive on purpose.
-if grep -nE '\$\{(pkgs\.|lib\.|toString |slots\}|bundle\})' "$BODY" >&2; then
+if grep -nE '\$\{(pkgs\.|lib\.|toString |slots\}|bundle\}|rotationFile\})' "$BODY" >&2; then
 	echo "!! unsubstituted Nix interpolation above -- add it to the sed below" >&2
 	exit 1
 fi
 chmod +x "$BODY"
 
-# Stands in for flutter-pi: records the bundle directory it was asked to run.
+# Stands in for flutter-pi: records the bundle directory it was asked to run,
+# and the flags it was asked to run it with.
 cat > "$WORK/flutter-pi-stub" <<STUB
 #!/usr/bin/env bash
 printf '%s\n' "\${@: -1}" > "$LAUNCHED"
+printf '%s\n' "\$*" > "$ARGV"
 STUB
 chmod +x "$WORK/flutter-pi-stub"
 
@@ -81,13 +85,18 @@ fill() { # fill <slot> [--incomplete]
 }
 
 reset() {
-	rm -rf "$SLOTS" "$LAUNCHED"
+	rm -rf "$SLOTS" "$LAUNCHED" "$ARGV" "$WORK/rotation"
 	mkdir -p "$SLOTS"
 }
 
 run() { bash "$BODY" >/dev/null 2>&1 || true; }
 
 ran() { cat "$LAUNCHED" 2>/dev/null || echo "(nothing)"; }
+
+# What --rotation it was given, which is the one flag that comes from outside.
+rotated() {
+	sed -n 's/.*--rotation \([^ ]*\).*/\1/p' "$ARGV" 2>/dev/null || echo "(none)"
+}
 
 pointer() { tr -d '[:space:]' < "$SLOTS/active" 2>/dev/null || echo "(none)"; }
 
@@ -155,6 +164,23 @@ fill b --incomplete
 printf 'a\n' > "$SLOTS/active"
 run
 check "runs the store bundle" "$STORE_BUNDLE" "$(ran)"
+
+echo "== rotation comes off the boot partition when it is set there"
+reset
+printf '90\n' > "$WORK/rotation"
+run
+check "turns the picture" "90" "$(rotated)"
+
+echo "== and is the default when it is not"
+reset
+run
+check "leaves it upright" "0" "$(rotated)"
+
+echo "== a rotation the panel cannot be mounted at is ignored"
+reset
+printf '45\n' > "$WORK/rotation"
+run
+check "falls back to upright" "0" "$(rotated)"
 
 echo "== a garbled pointer does not strand the box"
 reset

@@ -91,6 +91,13 @@ function Manage() {
   const menu = useRef(null);
   const sheetSettings = useRef(null);
   const bundlePicker = useRef(null);
+  const network = useRef(null);
+
+  // What wifi.conf on the boot partition says. Fetched when the dialog is
+  // opened rather than polled: it changes when somebody changes it, and the
+  // remote's poll has to stay small.
+  const [net, setNet] = useState(null);
+  const [joining, setJoining] = useState({ ssid: '', psk: '', country: '' });
 
   const say = (text, bad = false) => setNote({ text, bad });
   const s = state.settings;
@@ -393,6 +400,37 @@ function Manage() {
 
   const openSettings = () => settings.current.showModal();
 
+  // --- The network --------------------------------------------------------
+  //
+  // The box is an access point of its own unless it is told to join a network.
+  // Either way the pages are at the same address on the same port; what changes
+  // is which network you have to be on to reach them.
+
+  const openNetwork = async () => {
+    network.current.showModal();
+    try {
+      const now = await json('/api/network');
+      setNet(now);
+      setJoining({ ssid: now.wifi.ssid || '', psk: '', country: now.wifi.country || '' });
+    } catch (e) { say(e.message, true); }
+  };
+
+  /// Both directions of the same call: an ssid to join one, an empty one to be
+  /// one again. The reply comes back before the radio moves, because on the
+  /// access point the radio is carrying this very request.
+  const putNetwork = async (patch, warning) => {
+    if (!confirm(warning)) return;
+    try {
+      const now = await json('/api/network', 'PUT', patch);
+      setNet(now);
+      setJoining({ ...joining, psk: '' });
+      say(patch.ssid
+        ? 'Naprava se povezuje. Če omrežja ne najde, se čez pol minute vrne na svoje.'
+        : 'Naprava postavlja svoje omrežje. Poveži se nanj.');
+      network.current.close();
+    } catch (e) { say(e.message, true); }
+  };
+
   /// A front matter field changes in memory and goes to the card with Shrani,
   /// like every other edit on this page -- so a title and a verse are one save,
   /// and closing the dialog is not a write.
@@ -594,6 +632,7 @@ function Manage() {
       <button class="danger" onClick=${() => act(remove)} disabled=${editing == null}>Izbriši stran</button>
       <hr />
       <button onClick=${() => act(openSettings)}>Nastavitve zaslona</button>
+      <button onClick=${() => act(openNetwork)}>Omrežje</button>
       <button onClick=${() => { flip(); menu.current.close(); }}>
         ${light ? 'Temna barvna shema' : 'Svetla barvna shema'}
       </button>
@@ -647,6 +686,60 @@ function Manage() {
       <menu>
         <button onClick=${() => bundlePicker.current.click()}>Posodobi program</button>
         <button class="primary" onClick=${() => settings.current.close()}>Zapri</button>
+      </menu>
+    </dialog>
+
+    <dialog ref=${network}>
+      <h2>Omrežje</h2>
+      ${net && !net.available && html`
+        <p class="hint">
+          Ta naprava nima zagonskega razdelka, zato omrežja od tu ni mogoče
+          nastaviti. To velja za razvojni računalnik, ne za zaslon.
+        </p>`}
+      ${net && net.available && html`
+        <p class="hint">
+          Brez imena omrežja naprava postavi svoje, na katero se povežeš s
+          telefonom. Z imenom se poveže na obstoječe omrežje in je dosegljiva na
+          <code>pesmarica.local:8080</code>.
+        </p>
+        ${net.status && html`<p class="hint">Zadnjič: ${net.status}</p>`}
+        <label class="field">
+          <span class="stencil">Ime omrežja</span>
+          <input type="text" maxlength="32" placeholder="brez imena: svoje omrežje"
+            value=${joining.ssid}
+            onInput=${(e) => setJoining({ ...joining, ssid: e.target.value })} />
+        </label>
+        <label class="field">
+          <span class="stencil">Geslo</span>
+          <input type="password" autocomplete="off"
+            placeholder=${net.wifi.hasPassphrase ? 'shranjeno — pusti prazno' : 'brez gesla: odprto omrežje'}
+            value=${joining.psk}
+            onInput=${(e) => setJoining({ ...joining, psk: e.target.value })} />
+        </label>
+        <label class="field">
+          <span class="stencil">Država</span>
+          <input type="text" maxlength="2" placeholder="SI" value=${joining.country}
+            onInput=${(e) => setJoining({ ...joining, country: e.target.value.toUpperCase() })} />
+        </label>
+        <p class="warn">
+          Naprava se bo za nekaj trenutkov umaknila z omrežja. Če se na izbrano
+          omrežje ne poveže, čez pol minute spet postavi svoje — brez posega.
+        </p>`}
+      <menu>
+        ${net && net.available && html`
+          <button class="danger"
+            onClick=${() => putNetwork({ ssid: '' }, 'Naprava bo postavila svoje omrežje. Nadaljujem?')}>
+            Svoje omrežje
+          </button>
+          <button class="primary" disabled=${!joining.ssid.trim()}
+            onClick=${() => putNetwork(
+              joining.psk
+                ? { ssid: joining.ssid, psk: joining.psk, country: joining.country }
+                : { ssid: joining.ssid, country: joining.country },
+              'Naprava se bo povezala na "' + joining.ssid + '". Nadaljujem?')}>
+            Poveži
+          </button>`}
+        <button onClick=${() => network.current.close()}>Zapri</button>
       </menu>
     </dialog>`;
 }
