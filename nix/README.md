@@ -95,6 +95,44 @@ starts running. `bundles/trial` is what counts those starts — the app deletes 
 once it is up. The format is documented in `lib/src/update/bundle_slots.dart`,
 and `../tool/test_launcher.sh` exercises the launcher's half of it without a Pi.
 
+## Updating the system without reflashing
+
+`deploy_pi.sh` only moves Dart. When the kernel, the closure or anything else
+in `nix/` changes, the whole system has to go across:
+
+```bash
+make system                                  # -> out/firmware
+HOST=root@192.168.4.1 ../tool/deploy_system.sh
+```
+
+Expect minutes, not seconds: it is a few hundred megabytes over the box's own
+2.4 GHz access point onto an SD card. Only `nixos/default/` is replaced. The
+Pi's own firmware and `config.txt` are left alone -- they have no second copy
+to fall back to and change about once a year -- and the script says so when
+they have drifted from the build.
+
+The system is one directory and `config.txt`'s `os_prefix` names it, so an
+update is a second directory written beside the live one and then two renames.
+An interrupted transfer touches nothing that boots, and the running system
+holds its squashfs by an open loop fd, so it does not notice the directory
+move out from under it. `../tool/system_swap.sh` is that half, and
+`../tool/test_system_swap.sh` covers it without a Pi.
+
+The partition holds two systems, not three, so the deploy drops the previous
+`nixos/default.old` before it starts rather than after it finishes -- during a
+transfer the fallback is the system that is still running, which nothing
+touches until the swap.
+
+There is no automatic rollback: the Pi firmware picks the kernel before
+anything of ours runs, and the Zero 2 W has no `tryboot`-capable bootloader to
+borrow. What there is instead is the previous system, kept whole on the card at
+`nixos/default.old`. If the new one does not come up, the way back is a card
+reader and two renames on any laptop:
+
+```bash
+rm -rf FIRMWARE/nixos/default && mv FIRMWARE/nixos/default.old FIRMWARE/nixos/default
+```
+
 ## Writes to the card
 
 The SD card is the part that dies, so in steady state nothing reaches it at all.
@@ -112,7 +150,8 @@ itself, and the initrd mounts the partition, loop-mounts `rootfs.img` as
 `/nix/store`, and gives the system a tmpfs for root. It is the shape of the
 NixOS netboot image with the squashfs on the card instead of inside the
 initrd, because the closure does not fit in a Zero 2 W's RAM. Updating the
-system is replacing the files in `nixos/default/` from any laptop.
+system is replacing the files in `nixos/default/` -- with a card reader, or
+over ssh with `deploy_system.sh` above.
 
 `PESMARICA` is the songbook -- FAT32, 512 MiB in the image, with the pages and
 `hostapd.conf` already written into it by `mtools` at build time -- and

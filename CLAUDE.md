@@ -131,7 +131,15 @@ dead box, and the way back is ssh.
 `config.txt` and `nixos/default/` with the kernel, initrd, `cmdline.txt`, the
 device trees and `rootfs.img`, a zstd squashfs of the whole closure that the
 initrd loop-mounts as `/nix/store`; root is a tmpfs. No U-Boot, no ext4, no
-generations. Updating the system is replacing the files in `nixos/default/`.
+generations. Updating the system is replacing the files in `nixos/default/`
+— `tool/deploy_system.sh` does it over ssh, writing the new directory beside
+the live one and swapping the names. Which is why the live directory's *name*
+may never change: `fileSystems."/nix/.ro-store"` bakes that path into every
+system it builds, so one staged under any other name boots its own kernel
+against the previous squashfs — quietly, and it will even come up. There is no
+automatic rollback either — the firmware picks the kernel before anything of
+ours runs, and a Zero 2 W has no `tryboot` to borrow — so the previous system
+is kept whole at `nixos/default.old` and the way back is a card reader.
 `PESMARICA` is the songbook, and the one place anything persists: the ssh
 host key lives in `.ssh/` there. The card can be pulled and the pages edited
 on any laptop -- that is the point -- and FAT32 is what makes it possible to
@@ -278,7 +286,11 @@ a stale size.
 `nix/` is a NixOS flake and the single definition of the system: the units, the
 access point, the partitions, the paths. `tool/deploy_pi.sh` only pushes a build
 onto a box that already runs the image — if you find yourself wanting to install
-a unit from the repo, change the image instead.
+a unit from the repo, change the image instead. When the image itself is what
+changed, `tool/deploy_system.sh` pushes the boot partition (`make system`, or
+`nix build .#firmware`) onto a running box rather than reflashing a card. It
+replaces `nixos/default/` and nothing else, so a change to the Pi firmware or
+`config.txt` still needs a reflash; the script says so when it sees one.
 
 It builds on [nixos-raspberrypi](https://github.com/nvmd/nixos-raspberrypi),
 chosen over raspberry-pi-nix because its cache actually holds the kernel: check
@@ -315,6 +327,9 @@ over a temp songbook — fast, and where most logic belongs.
 `test/render_test.dart` and `test/title_test.dart` are widget tests over a real
 `PresenterScreen`. `test/bundle_slots_test.dart` covers the update slots, and
 `tool/test_launcher.sh` covers the rollback side of them in shell.
+`tool/test_system_swap.sh` does the same for system updates: it runs
+`tool/system_swap.sh` against fake boot partitions, and every refusal it pins
+is a card reader trip that did not happen.
 `test/network_api_test.dart` pins what the web interface may write to the boot
 partition -- above all that a passphrase wpa_supplicant would refuse is refused
 while there is still somebody connected to be told about it.

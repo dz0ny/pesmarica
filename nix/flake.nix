@@ -56,6 +56,9 @@
         default = self.nixosConfigurations.pesmarica.config.system.build.sdImage;
         sdImage = self.nixosConfigurations.pesmarica.config.system.build.sdImage;
         sdImageRaw = self.nixosConfigurations.pesmarica-raw.config.system.build.sdImage;
+        # The boot partition on its own: what tool/deploy_system.sh pushes onto
+        # a box that already runs the image, instead of reflashing a card.
+        firmware = self.nixosConfigurations.pesmarica.config.system.build.firmware;
         flutter-pi = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/flutter-pi.nix { };
       };
     };

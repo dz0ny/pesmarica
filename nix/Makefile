@@ -2,6 +2,7 @@
 #
 #   make image   -> nix/out/sd-image/*.img.zst
 #   make flash DISK=/dev/rdisk4
+#   make system  -> nix/out/firmware, for tool/deploy_system.sh
 #
 # Nix runs inside the colima VM: it is aarch64 Linux, so cache.nixos.org serves
 # prebuilt binaries for userland and nixos-raspberrypi's cache serves the Pi
@@ -41,7 +42,7 @@ NIX_RUN = docker run --rm \
 	    --extra-substituters "https://nixos-raspberrypi.cachix.org" \
 	    --extra-trusted-public-keys "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
 
-.PHONY: image bundle store lock eval shell clean flash
+.PHONY: image system bundle store lock eval shell clean flash
 
 $(HERE)/.docker/config.json:
 	@mkdir -p $(dir $@) && echo '{}' > $@
@@ -49,6 +50,12 @@ $(HERE)/.docker/config.json:
 image: bundle store
 	$(NIX_RUN) build .#sdImage --print-build-logs --out-link /work/out/sd-image
 	@ls -lh $(HERE)/out/sd-image/sd-image/ 2>/dev/null || ls -lh $(HERE)/out/sd-image/
+
+# The boot partition on its own -- what tool/deploy_system.sh rsyncs onto a
+# running box. Same bytes the card image would carry, without the card.
+system: bundle store
+	$(NIX_RUN) build .#firmware --print-build-logs --out-link /work/out/firmware
+	@du -sh $(HERE)/out/firmware/nixos/default
 
 # Stage the pieces the flake needs from outside its root.
 bundle:

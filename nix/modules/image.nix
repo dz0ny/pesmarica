@@ -10,9 +10,9 @@
 # rootfs.img as /nix/store, and root itself is a tmpfs -- the shape of the
 # NixOS netboot image, with the squashfs on the card instead of inside the
 # initrd, because the closure does not fit in a Zero 2 W's RAM. Updating the
-# system is replacing the files in nixos/default/ from any laptop; the
-# firmware's os_prefix is what would later let a second folder be a second
-# slot.
+# system is replacing the files in nixos/default/ -- with a card reader, or
+# over ssh with tool/deploy_system.sh, which writes the new directory beside
+# the live one and swaps the names.
 #
 # Both partitions are populated with mtools, so this runs unprivileged: no
 # loop devices, no mounting, and the same recipe for the songbook as before.
@@ -29,6 +29,16 @@ let
     fileName = "rootfs";
     comp = "zstd -Xcompression-level 15";
   };
+
+  # The boot partition's contents, as their own derivation. The card image
+  # copies this in, and `nix build .#firmware` is what tool/deploy_system.sh
+  # rsyncs onto a box that is already running -- the same bytes either way, so
+  # an update over ssh and a freshly flashed card land the same system.
+  firmware = pkgs.runCommand "pesmarica-firmware" { } ''
+    mkdir -p $out
+    ${config.boot.loader.raspberry-pi.firmwarePopulateCmd} -c ${toplevel} -f $out
+    cp ${rootfs} $out/nixos/default/rootfs.img
+  '';
 
   songbookMiB = 512;
   songbookClusterSectors = 8; # 4 KiB clusters: a sane FAT once this fills a card.
@@ -49,6 +59,8 @@ in
       description = "The access point config the PESMARICA partition ships with.";
     };
   };
+
+  config.system.build.firmware = firmware;
 
   config.system.build.sdImage = pkgs.callPackage (
     { stdenv, dosfstools, mtools, libfaketime, util-linux, zstd }:
@@ -81,9 +93,7 @@ in
 
         # -- 1: the system --------------------------------------------------
 
-        mkdir firmware
-        ${config.boot.loader.raspberry-pi.firmwarePopulateCmd} -c ${toplevel} -f ./firmware
-        cp ${rootfs} firmware/nixos/default/rootfs.img
+        cp -r ${firmware} firmware
         chmod -R u+w firmware
         find firmware -exec touch --date=2000-01-01 {} +
 
