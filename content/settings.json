@@ -1,9 +1,10 @@
 {
   "theme": "dark",
-  "font": "inter",
+  "font": "atkinson",
   "baseScale": 1.0,
   "showChrome": true,
-  "showTitle": true,
+  "showTitle": false,
+  "rotation": 0,
   "httpPort": 8080,
   "httpEnabled": true
 }
