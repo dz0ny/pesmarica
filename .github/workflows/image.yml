@@ -167,14 +167,14 @@ jobs:
           head -25 closure.txt
 
       # The image is ~2 GiB, of which ~600 MiB is the closure's squashfs and the
-      # rest is zeroes. The zeroes vanish under any compressor at any level;
-      # the squashfs is already zstd and barely gives up another percent. So
-      # the compressor's only real job is the zeroes, and the effort spent on
-      # the rest is bought back once -- when somebody downloads a release.
+      # rest is zeroes. The zeroes are the whole job, and they collapse at any
+      # level -- the squashfs is already zstd, so turning the dial up only
+      # grinds at data that will not give. Measured on one build: xz -9 took
+      # 2m43s for 631 MiB, zstd seconds for 643 MiB. Two percent.
       #
-      # Hence two settings. A release gets xz -9, because that file is public
-      # and downloaded for years. A dispatched build gets zstd, which lands
-      # within a few percent in seconds rather than minutes, and is what
+      # So a release gets xz, because that file is public and every tool can
+      # open it, but at -1: the zeroes go either way and nobody should wait
+      # minutes for the rest. Everything else gets zstd, which is what
       # nix/Makefile's `make flash` already expects to unpack.
       - name: Compress
         working-directory: nix
@@ -186,7 +186,7 @@ jobs:
           mkdir -p ../out
           name="pesmarica-$(date -u +%Y%m%d)-${GITHUB_SHA::7}.img"
           if [ "$RELEASE" = true ]; then
-            out="$name.xz"; xz -9 -T0 -c "$img" > "../out/$out"
+            out="$name.xz"; xz -1 -T0 -c "$img" > "../out/$out"
           else
             out="$name.zst"; zstd -T0 -12 -c "$img" > "../out/$out"
           fi
