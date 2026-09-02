@@ -930,6 +930,12 @@ in
     "d ${slots} - - - -"
   ];
 
-  # tty1 belongs to flutter-pi.
+  # tty1 belongs to flutter-pi. Both names: getty@tty1 is what the getty
+  # generator would start, autovt@tty1 is what logind starts for whichever
+  # console is active -- and the unit above hangs up the tty when it starts,
+  # the getty hangs it back on its own restart, and the two take turns killing
+  # each other every two seconds. Masking only the first is what that looked
+  # like: a login prompt on the panel and NRestarts climbing.
   systemd.services."getty@tty1".enable = false;
+  systemd.services."autovt@tty1".enable = false;
 }

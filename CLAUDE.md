@@ -203,6 +203,12 @@ lets go after a minute idle. Units that hold it through `RequiresMountsFor`
 failure, so `Restart=always` never fires: the box boots to a console one
 minute in. The module pins it as a plain mount; keep it that way.
 
+**Nothing else may sit on tty1.** logind starts `autovt@tty1` for the active
+console, separately from the `getty@tty1` the image already disables. The app
+unit hangs up the tty on start, the getty hangs it back, and the app restarts
+every two seconds with nothing in the journal. Both instances are disabled;
+keep them so.
+
 **GPU drivers only exist under `/run/opengl-driver`.** flutter-pi links
 `libgbm` and `libEGL`, which since mesa 25 are front ends that find `dri_gbm.so`
 and the EGL vendor file through that path alone. `hardware.graphics.enable` is
