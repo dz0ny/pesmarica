@@ -488,12 +488,6 @@ function Manage() {
           <span class="sep"></span>
           ${tool('Kitica', 'Prelom kitice', verseBreak)}
           ${tool('Slika', 'Vstavi sliko', () => imagePicker.current.click())}
-          <span class="grow"></span>
-          <button
-            class=${previewing ? 'on' : ''}
-            title="Predogled (⌘P)"
-            onClick=${() => setPreviewing(!previewing)}
-          >Predogled</button>
         </div>
 
         ${previewing
@@ -504,11 +498,20 @@ function Manage() {
               onInput=${(e) => { setSource(e.target.value); setDirty(true); say('Neshranjeno …'); }}
             ></textarea>`}
 
-        <p class=${'say on-desk' + (note.bad ? ' bad' : '')}>${note.text}</p>
+        <div class="sheet-foot on-desk">
+          <span class=${'say grow' + (note.bad ? ' bad' : '')}>${note.text}</span>
+          <button
+            class=${previewing ? 'on' : ''}
+            title="Predogled (⌘P)"
+            onClick=${() => setPreviewing(!previewing)}
+          >Predogled</button>
+        </div>
 
         <div class="phone-bar on-phone">
           <button onClick=${openChooser}>Strani</button>
           <span class=${'say grow' + (note.bad ? ' bad' : '')}>${note.text}</span>
+          <button class=${previewing ? 'on' : ''} onClick=${() => setPreviewing(!previewing)}
+            title="Predogled">Predogled</button>
           <button class="primary" onClick=${save} disabled=${editing == null}>Shrani</button>
         </div>
       </div>

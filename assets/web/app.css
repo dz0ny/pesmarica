@@ -361,6 +361,14 @@ textarea {
 
 .say { color: var(--muted); font-size: 13px; padding: 9px 14px; border-top: 1px solid var(--edge); }
 .say.bad { color: var(--rust); }
+/* The preview toggle sits under the text, beside the status line, rather than
+   among the formatting tools: it is not a thing you do to the text. */
+.sheet-foot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 14px; border-top: 1px solid var(--edge);
+}
+.sheet-foot .say { padding: 0; border: 0; min-width: 0; }
+.sheet-foot button { padding: 5px 9px; font-size: 13px; }
 
 /* Close to what the screen does, not a copy of it: same shapes and rhythm, the
    browser's own font. The display is the authority. */
@@ -431,9 +439,11 @@ dialog h2 + .field { margin-top: 10px; }
 .now, .now span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .more { letter-spacing: .1em; padding: 8px 12px; line-height: 1; }
 
+/* No display here: .on-phone decides whether it shows, and a display of its
+   own would win over that on a desktop. */
 .phone-bar {
   position: sticky; bottom: 0; z-index: 2;
-  display: flex; align-items: center; gap: 10px;
+  align-items: center; gap: 10px;
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   background: var(--board); border-top: 1px solid var(--edge);
 }
@@ -441,7 +451,7 @@ dialog h2 + .field { margin-top: 10px; }
 .phone-bar button { padding: 12px 16px; }
 
 /* The overflow menu: everything an edit does not need every time. */
-.menu { display: grid; gap: 1px; padding: 14px; max-width: 22rem; }
+.menu { gap: 1px; padding: 14px; max-width: 22rem; }
 .menu[open] { display: grid; }
 /* The direct children are the menu rows; the buttons inside the closing <menu>
    are ordinary buttons and keep their own styling. */
