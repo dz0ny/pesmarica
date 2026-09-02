@@ -202,7 +202,15 @@ in
   # freshly flashed card comes up with no wifi this is the first line to suspect.
   # The Pi's own GPU firmware is separate and comes from raspberry-pi-02.base.
   hardware.enableRedistributableFirmware = lib.mkForce false;
-  hardware.firmware = [ pkgs.raspberrypiWirelessFirmware ];
+  #
+  # wireless-regdb is the other half: without it the kernel logs a failed load
+  # of regulatory.db at boot and falls back to the world regulatory domain,
+  # which quietly ignores the country_code hostapd is started with. It is a few
+  # kilobytes, and it is what makes the AP legal on the channel it picks.
+  hardware.firmware = [
+    pkgs.raspberrypiWirelessFirmware
+    pkgs.wireless-regdb
+  ];
 
   networking = {
     hostName = "pesmarica";
@@ -322,8 +330,41 @@ in
   services.openssh = {
     enable = true;
     settings.PermitRootLogin = "yes";
+    # /etc is a read-only overlay of the store, so sshd-keygen cannot write the
+    # host key where it normally does and the unit fails -- taking ssh, the only
+    # way into a box whose screen is broken, with it. The keys live on the root
+    # filesystem instead, written once on the first boot. One ed25519 key, not
+    # also a 4096-bit RSA one: this generates on a Zero 2 W, at boot.
+    hostKeys = [
+      {
+        path = "/var/lib/ssh/ssh_host_ed25519_key";
+        type = "ed25519";
+      }
+    ];
   };
   users.users.root.initialPassword = "pesmarica";
+
+  # Same read-only /etc, upstream's own unit: it registers the store paths (on
+  # /nix, writable) and then touches /etc/NIXOS, which cannot work here, so the
+  # unit fails before it clears /nix-path-registration and retries every boot.
+  # The tag is for nixos-rebuild, which an appliance whose system comes from a
+  # flashed image never runs; the registration itself is worth keeping.
+  systemd.services.register-nix-paths.script =
+    let
+      inherit (config.sdImage) nixPathRegistrationFile;
+      nix = config.nix.package.out;
+    in
+    lib.mkForce ''
+      ${lib.getExe' nix "nix-store"} --load-db < ${nixPathRegistrationFile}
+      ${lib.getExe' nix "nix-env"} -p /nix/var/nix/profiles/system --set /run/current-system
+      rm -f ${nixPathRegistrationFile}
+    '';
+
+  # pam_lastlog2 seeds its database from /var/log/lastlog, which on this box is
+  # a fresh tmpfs every boot with no such file in it, so the import unit fails.
+  # Nobody logs in but the person holding an ssh key, and the record of it would
+  # be one more thing writing to the card.
+  systemd.services.lastlog2-import.enable = lib.mkForce false;
 
   documentation.enable = false;
   documentation.nixos.enable = false;
