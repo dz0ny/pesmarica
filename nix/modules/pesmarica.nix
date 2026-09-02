@@ -770,10 +770,14 @@ in
       # The songbook partition, appended to the image rather than created on the
       # first boot. Same recipe as /boot/firmware above, because it is the same
       # kind of filesystem and the same tools are already here.
-      truncate -s +${toString megabytes}M $img
-      sfdisk --no-reread --no-tell-kernel --append $img <<EOF
-          size=${toString (megabytes * 1024 * 1024 / 512)}, type=c
-      EOF
+      # A megabyte more than the partition needs: sfdisk aligns a new partition
+      # to a 1 MiB boundary, and the root one before it does not end on one, so
+      # asking for exactly what was added fails with "no free sectors" -- the
+      # alignment has already eaten into it. The size is left out for the same
+      # reason: take whatever is free, which is that 512 MiB give or take the
+      # alignment. type=c is W95 FAT32 (LBA), which is what a laptop expects.
+      truncate -s +${toString (megabytes + 1)}M $img
+      echo ',,c' | sfdisk --no-reread --no-tell-kernel --append $img
 
       eval $(partx $img -o START,SECTORS --nr 3 --pairs)
       truncate -s $((SECTORS * 512)) songbook_part.img
