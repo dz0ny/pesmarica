@@ -770,16 +770,31 @@ in
       # The songbook partition, appended to the image rather than created on the
       # first boot. Same recipe as /boot/firmware above, because it is the same
       # kind of filesystem and the same tools are already here.
-      # A megabyte more than the partition needs: sfdisk aligns a new partition
-      # to a 1 MiB boundary, and the root one before it does not end on one, so
-      # asking for exactly what was added fails with "no free sectors" -- the
-      # alignment has already eaten into it. The size is left out for the same
-      # reason: take whatever is free, which is that 512 MiB give or take the
-      # alignment. type=c is W95 FAT32 (LBA), which is what a laptop expects.
+      # A megabyte more than the partition needs, because the start below is
+      # rounded up to the next 1 MiB boundary and the root partition does not
+      # end on one.
       truncate -s +${toString (megabytes + 1)}M $img
-      echo ',,c' | sfdisk --no-reread --no-tell-kernel --append $img
+
+      # The start has to be given. Left to itself, --append puts the partition
+      # in the *first* free area, which on this layout is the 7 MiB gap in
+      # front of /boot/firmware, not the space just added at the end -- and it
+      # does so silently, or fails with "no free sectors available" if a size
+      # was named that will not fit there. So: start right after the root
+      # partition, aligned, and take everything from there to the end.
+      # type=c is W95 FAT32 (LBA), which is what a laptop expects.
+      eval $(partx $img -o START,SECTORS --nr 2 --pairs)
+      songbookStart=$(( ((START + SECTORS + 2047) / 2048) * 2048 ))
+      echo "start=$songbookStart,,c" | sfdisk --no-reread --no-tell-kernel --append $img
 
       eval $(partx $img -o START,SECTORS --nr 3 --pairs)
+      # Belt and braces, because the failure above was silent: a partition in
+      # the wrong hole is small, and a small FAT32 is one mkfs warns about and
+      # some systems read as FAT16. Better a build that stops than a card that
+      # holds seven megabytes of songbook.
+      [ "$SECTORS" -ge ${toString ((megabytes - 16) * 2048)} ] || {
+        echo "pesmarica: songbook partition came out $((SECTORS / 2048)) MiB, expected ${toString megabytes}" >&2
+        exit 1
+      }
       truncate -s $((SECTORS * 512)) songbook_part.img
       mkfs.vfat --invariant -i 50534d43 -F 32 -s ${toString clusterSectors} \
         -n PESMARICA songbook_part.img
