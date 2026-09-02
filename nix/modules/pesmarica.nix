@@ -624,9 +624,6 @@ in
     # Appended, not forced: /root/.ssh still works for the length of a boot,
     # which is how a key gets put here in the first place.
     authorizedKeysFiles = [ "/var/lib/pesmarica/.ssh/authorized_keys" ];
-    # Every ssh connection otherwise spends about ninety seconds on a reverse
-    # lookup this box cannot answer, and a deploy makes several of them.
-    settings.UseDNS = false;
   };
   # Wants, not Requires: a card with no songbook partition still gets an
   # sshd, with a key that lasts one boot.
