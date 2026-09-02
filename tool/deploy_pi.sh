@@ -40,18 +40,33 @@ case "$ACTIVE" in
 	*) SLOT=a ;;
 esac
 
+# tar, not rsync: rsync has to exist on the *box*, and emptying
+# environment.defaultPackages took it off every image built since. tar is in
+# the closure regardless. The partitions are FAT and carry neither owner nor
+# mode -- they come from the mount -- so extraction must not try to set them.
+push() { # push <local dir> <remote dir> [tar create args...]
+	local src="$1" dst="$2"; shift 2
+	tar -C "$src" "$@" -cf - . | ssh "$HOST" "
+		mkdir -p $dst
+		tar -C $dst -xf - --no-same-owner --no-same-permissions
+	"
+}
+
 echo "==> $HOST:$SLOTS_DIR/$SLOT ($VERSION)"
-# --delete: a bundle is a set of files that have to match each other, and a
-# leftover from two versions ago is exactly the kind of thing that works until
-# it doesn't. The markers go last, so a cut-short rsync leaves an unusable slot
-# rather than a plausible one.
-ssh "$HOST" "mkdir -p $SLOTS_DIR/$SLOT"
-rsync -a --delete --exclude flutter-pi --exclude .last_build_id \
-	--exclude .complete --exclude .version \
-	"$BUNDLE/" "$HOST:$SLOTS_DIR/$SLOT/"
+# The slot is emptied first: a bundle is a set of files that have to match each
+# other, and a leftover from two versions ago is exactly the kind of thing that
+# works until it doesn't. This is what rsync's --delete used to do. The markers
+# go last, so a cut-short transfer leaves an unusable slot rather than a
+# plausible one.
+ssh "$HOST" "rm -rf $SLOTS_DIR/$SLOT && mkdir -p $SLOTS_DIR/$SLOT"
+push "$BUNDLE" "$SLOTS_DIR/$SLOT" \
+	--exclude ./flutter-pi --exclude ./.last_build_id \
+	--exclude ./.complete --exclude ./.version
 
 echo "==> $HOST:$CONTENT_DIR"
-rsync -a "$ROOT/content/" "$HOST:$CONTENT_DIR/"
+# No emptying here, deliberately: pages created on the box through the web
+# interface must survive a redeploy.
+push "$ROOT/content" "$CONTENT_DIR"
 
 # Mark the slot complete, arm the trial, then flip the pointer — the same order
 # the app's own installer uses, and the flip is a rename.

@@ -12,11 +12,12 @@
 
 name: image
 
+# Not `push: tags`, though a tag is what makes a release: that fires this a
+# second time on the same commit, and the second run cannot attach anything --
+# the upload step is gated on the release event. Two from-source mesa builds
+# for one release.
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
   release:
     types: [published]
 

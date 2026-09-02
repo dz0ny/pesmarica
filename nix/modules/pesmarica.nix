@@ -632,10 +632,6 @@ in
   # screen or the web interface.
   environment.defaultPackages = lib.mkForce [ ];
   programs.command-not-found.enable = false;
-  # Except rsync, which emptying defaultPackages took away with the rest -- and
-  # both deploy scripts push over ssh with it, so without this the box is only
-  # updatable by pulling the card. It is a megabyte and a half.
-  environment.systemPackages = [ pkgs.rsync ];
   # Flutter carries its own text stack and the fonts are inside the bundle, so
   # nothing on this box asks fontconfig anything.
   fonts.fontconfig.enable = lib.mkForce false;

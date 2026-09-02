@@ -245,10 +245,13 @@ and the VA-API tracker then demands a driver that is gone; and mesa's
 `spirv2dxil` output has to be created empty, because it declares that output
 unconditionally while only the WSL driver fills it.
 
-**`environment.defaultPackages` is empty, so anything the deploy scripts need
-must be asked for.** Emptying it took rsync with it, and both `deploy_pi.sh`
-and `deploy_system.sh` push over ssh with rsync -- a box without it can only
-be updated with a card reader. `environment.systemPackages` puts it back.
+**`environment.defaultPackages` is empty, so a deploy may only use what the
+closure already carries.** Both deploy scripts used to push with rsync, which
+emptying that list had quietly removed -- and a box with no rsync could not
+receive the update that would have installed rsync. They push with `tar`
+instead, which systemd pulls in regardless. Anything new that shells out on
+the box has the same constraint: check a running one before believing it is
+there.
 
 **Getting into a box that is on no network.** Take `wifi.conf` off the boot
 partition so it comes up as the access point, join `Pesmarica`, then ssh to its
