@@ -234,7 +234,12 @@ keep them so.
 `libgbm` and `libEGL`, which since mesa 25 are front ends that find `dri_gbm.so`
 and the EGL vendor file through that path alone. `hardware.graphics.enable` is
 what creates it; without it flutter-pi reports "Could not create GBM device" on
-a working `/dev/dri/card0`.
+a working `/dev/dri/card0`. The mesa behind it is overridden down to
+`v3d` and `vc4` with no Vulkan drivers, because stock mesa's `llvmpipe` pulls
+in 591 MB of LLVM -- a third of the closure -- for a software rasteriser this
+box can never use. That override is why mesa builds from source in CI instead
+of coming from the cache, and adding a driver back means paying that build
+again.
 
 **Getting into a box that is on no network.** Take `wifi.conf` off the boot
 partition so it comes up as the access point, join `Pesmarica`, then ssh to its

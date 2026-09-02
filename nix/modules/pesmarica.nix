@@ -387,6 +387,26 @@ in
   # the box boots to a console.
   hardware.graphics.enable = true;
 
+  # Stock mesa builds twenty-eight gallium drivers, so that one binary can
+  # drive every GPU there is. This box has one, a VideoCore IV. Among the
+  # twenty-six it will never meet is llvmpipe, the software rasteriser, and
+  # llvmpipe is what drags in LLVM: 591 MB, about a third of the closure, for
+  # a fallback that would draw this UI at a frame every few seconds if it ever
+  # ran -- and if the GPU is gone the box is a dead screen either way.
+  #
+  # vc4 is the driver the Zero 2 W actually uses; v3d is its VideoCore VI
+  # successor, kept because it is a few megabytes and the alternative to
+  # guessing wrong is a black screen and a card reader. Neither needs LLVM.
+  # flutter-pi is EGL/GLES throughout and VC4 has no Vulkan driver at all.
+  #
+  # The price is that mesa stops being a cache hit and builds from source on
+  # every CI run. If that ever costs more than the megabytes are worth, the
+  # way back is deleting this override.
+  hardware.graphics.package = pkgs.mesa.override {
+    galliumDrivers = [ "v3d" "vc4" ];
+    vulkanDrivers = [ ];
+  };
+
   hardware.firmware = [
     pkgs.raspberrypiWirelessFirmware
     pkgs.wireless-regdb
