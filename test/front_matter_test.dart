@@ -87,4 +87,55 @@ void main() {
       expect(SongPage.clampScale(double.nan), 1.0);
     });
   });
+
+  group('the editor edits front matter as fields, not as YAML', () {
+    SongPage open(String source) =>
+        SongPage.parse('/songs/007-poskus.md', source, number: 7);
+
+    test('clearing the title falls back to the heading in the body', () {
+      final page = open('---\ntitle: Pinjeno\n---\n\n# Iz besedila\n');
+      final cleared = page.copyWith(clearTitle: true);
+
+      expect(cleared.title, 'Iz besedila');
+      expect(cleared.toSource(), isNot(contains('title:')));
+    });
+
+    test('a new title is pinned, and the heading stops deciding', () {
+      final page = open('# Iz besedila\n');
+      final named = page.copyWith(declaredTitle: 'Po naše');
+
+      expect(named.title, 'Po naše');
+      expect(named.toSource(), contains('title: Po naše'));
+    });
+
+    test('showTitle has three states, and the third is not "false"', () {
+      final page = open('---\nshowTitle: false\n---\n\n# Naslov\n');
+      expect(page.showTitle, isFalse);
+
+      final followsTheSongbook = page.copyWith(clearShowTitle: true);
+      expect(followsTheSongbook.showTitle, isNull);
+      expect(followsTheSongbook.toSource(), isNot(contains('showTitle')));
+    });
+
+    test('keys Pesmarica does not know survive the form', () {
+      final page = open('---\nkomu: zboru\nscale: 1.0\n---\n\n# Naslov\n');
+      final edited = page.copyWith(
+        scale: 1.35,
+        align: PageAlign.center,
+        body: '\n# Drugo\n',
+      );
+
+      final source = edited.toSource();
+      expect(source, contains('komu: zboru'));
+      expect(source, contains('scale: 1.35'));
+      expect(source, contains('align: center'));
+      expect(source, contains('# Drugo'));
+    });
+
+    test('the body the editor is handed carries no header at all', () {
+      final page = open('---\ntitle: Pinjeno\nscale: 2\n---\n\nPrva vrstica\n');
+      expect(page.body, isNot(contains('---')));
+      expect(page.body.trim(), 'Prva vrstica');
+    });
+  });
 }

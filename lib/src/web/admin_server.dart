@@ -10,6 +10,7 @@ import 'package:shelf_router/shelf_router.dart';
 import '../data/presenter.dart';
 import '../data/songbook.dart';
 import '../model/settings.dart';
+import '../model/song_page.dart';
 import '../update/bundle_installer.dart';
 import '../update/bundle_slots.dart';
 import 'credentials.dart';
@@ -316,6 +317,12 @@ class AdminServer {
     ],
   };
 
+  /// The page split the way the editor wants it: the words on their own, and
+  /// the front matter as fields rather than as YAML.
+  ///
+  /// The whole point is that somebody who has never seen a `---` header can
+  /// still set a title or magnify a page. `source` stays for scripts, which
+  /// have no such trouble.
   Response _getPage(Request request, String number) {
     final index = songbook.indexOfNumber(int.parse(number));
     if (index < 0) return Response.notFound('Ni strani $number.\n');
@@ -324,18 +331,65 @@ class AdminServer {
       'number': page.number,
       'title': page.title,
       'file': page.fileName,
+      'body': page.body,
+      'front': <String, Object?>{
+        // Null, not the derived title: the field is empty until somebody pins
+        // one, and `derived` is what the page is called meanwhile.
+        'title': page.declaredTitle,
+        'derived': page.title,
+        'scale': page.scale,
+        'align': page.align.name,
+        'showTitle': page.showTitle,
+        // Keys Pesmarica does not interpret. Shown, not editable, so nobody
+        // wonders where they went -- they are kept on every write.
+        'extra': page.extra,
+      },
       'source': File(page.path).readAsStringSync(),
     });
   }
 
+  /// Takes either the raw markdown, as a script would send it, or the editor's
+  /// `{front, body}` -- in which case the front matter is composed here, by the
+  /// same code the display parses it with, and unknown keys survive.
   Future<Response> _putPage(Request request, String number) async {
-    final body = await request.readAsString();
+    final wanted = int.parse(number);
+    final raw = await request.readAsString();
+    final isJson = (request.headers['content-type'] ?? '').contains(
+      'application/json',
+    );
     try {
-      await songbook.writeSource(int.parse(number), body);
+      await songbook.writeSource(
+        wanted,
+        isJson ? _composePage(wanted, raw) : raw,
+      );
     } on ArgumentError catch (e) {
       return Response.notFound('${e.message}\n');
     }
     return _json(_state());
+  }
+
+  String _composePage(int number, String json) {
+    final index = songbook.indexOfNumber(number);
+    if (index < 0) throw ArgumentError('Ni strani $number.');
+    final body = jsonDecode(json) as Map<String, Object?>;
+    final front = (body['front'] as Map<String, Object?>?) ?? const {};
+
+    final title = (front['title'] as String?)?.trim();
+    final showTitle = front['showTitle'];
+
+    return songbook.pages[index]
+        .copyWith(
+          body: body['body'] as String?,
+          declaredTitle: title,
+          clearTitle: title == null || title.isEmpty,
+          scale: (front['scale'] as num?)?.toDouble(),
+          align: front['align'] == 'center'
+              ? PageAlign.center
+              : PageAlign.start,
+          showTitle: showTitle is bool ? showTitle : null,
+          clearShowTitle: showTitle == null,
+        )
+        .toSource();
   }
 
   Future<Response> _deletePage(Request request, String number) async {

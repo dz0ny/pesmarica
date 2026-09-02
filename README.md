@@ -339,6 +339,25 @@ On a phone the page list is behind **Strani** in the editor bar rather than
 beside the text, because stacked they leave a slot too small to write a verse
 in.
 
+### Page settings
+
+The `---` header at the top of a markdown file is where a page keeps its title,
+its magnification, and whether the screen shows its title — and it is also the
+easiest thing in the songbook to break with one stray character. So the editor
+never shows it. **Nastavitve strani** opens it as a form:
+
+| | |
+| --- | --- |
+| Naslov | Empty means the page is called whatever its `#` heading says |
+| Povečava | Magnification for this page alone, on top of the songbook's |
+| Postavitev | Content at the top of the screen, or centred on it |
+| Naslov na zaslonu | Show, hide, or follow the songbook-wide setting |
+
+The text area holds the words and nothing else. Front matter keys Pesmarica
+does not interpret are listed in the dialog and kept on every write, so a
+songbook that carries its own notes does not lose them to the web interface.
+Changes land with **Shrani**, along with the text.
+
 ### Writing tools
 
 A toolbar over the editor covers what a songbook page needs without knowing any

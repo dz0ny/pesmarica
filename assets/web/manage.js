@@ -72,6 +72,10 @@ function Manage() {
   const [state, setState] = useState({ pages: [], settings: {}, fonts: [] });
   const [editing, setEditing] = useState(null);
   const [source, setSource] = useState('');
+  // The front matter, as fields. The editor never shows the `---` header: a
+  // person who can write a hymn should not have to know YAML to give the page
+  // a title, and a stray character in that block takes the page off the wall.
+  const [front, setFront] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [note, setNote] = useState({ text: 'Izberi stran.', bad: false });
@@ -85,6 +89,7 @@ function Manage() {
   const imagePicker = useRef(null);
   const chooser = useRef(null);
   const menu = useRef(null);
+  const sheetSettings = useRef(null);
   const bundlePicker = useRef(null);
 
   const say = (text, bad = false) => setNote({ text, bad });
@@ -120,7 +125,8 @@ function Manage() {
     try {
       const page = await api('/api/pages/' + number);
       setEditing(number);
-      setSource(page.source);
+      setSource(page.body);
+      setFront(page.front);
       setDirty(false);
       say('Naložena stran ' + page.number + ' · ' + page.file);
     } catch (e) { say(e.message, true); }
@@ -129,7 +135,7 @@ function Manage() {
   const save = async () => {
     if (editing == null) return say('Ni izbrane strani.', true);
     try {
-      adopt(await api('/api/pages/' + editing, { method: 'PUT', body: source }));
+      adopt(await json('/api/pages/' + editing, 'PUT', { front, body: source }));
       setDirty(false);
       say('Shranjeno. Zaslon se osveži sam.');
     } catch (e) { say(e.message, true); }
@@ -155,6 +161,7 @@ function Manage() {
       adopt(await api('/api/pages/' + editing, { method: 'DELETE' }));
       setEditing(null);
       setSource('');
+      setFront(null);
       setDirty(false);
       say('Izbrisano.');
     } catch (e) { say(e.message, true); }
@@ -385,6 +392,15 @@ function Manage() {
   // --- Render -------------------------------------------------------------
 
   const openSettings = () => settings.current.showModal();
+
+  /// A front matter field changes in memory and goes to the card with Shrani,
+  /// like every other edit on this page -- so a title and a verse are one save,
+  /// and closing the dialog is not a write.
+  const setField = (patch) => {
+    setFront({ ...front, ...patch });
+    setDirty(true);
+    say('Neshranjeno …');
+  };
   const openChooser = () => { setFind(''); chooser.current.showModal(); };
   const flip = () => setLight(flipSkin() === 'light');
   const lock = async () => {
@@ -452,6 +468,8 @@ function Manage() {
               : html`<span class="n">${editing}</span>`}
           </span>
           <span class="grow"></span>
+          <button onClick=${() => sheetSettings.current.showModal()}
+            disabled=${editing == null}>Nastavitve strani</button>
           <button onClick=${renumber} disabled=${editing == null}
             title="Številka je vrstni red">Preštevilči</button>
           <button onClick=${show} disabled=${editing == null}>Prikaži</button>
@@ -510,8 +528,63 @@ function Manage() {
         if (file) await install(file);
       }} />
 
+    <dialog ref=${sheetSettings}>
+      <h2>Nastavitve strani ${editing ?? ''}</h2>
+      ${front && html`
+        <label class="field">
+          <span class="stencil">Naslov</span>
+          <input type="text" value=${front.title || ''} placeholder=${front.derived}
+            onInput=${(e) => setField({ title: e.target.value })} />
+          <span class="hint">Prazno: uporabi se naslov iz besedila, torej vrstica z <b>#</b>.</span>
+        </label>
+
+        <label class="field">
+          <span class="stencil">Povečava — ${Math.round(front.scale * 100)} %</span>
+          <input type="range" min="40" max="400" step="5"
+            value=${Math.round(front.scale * 100)}
+            onInput=${(e) => setField({ scale: Number(e.target.value) / 100 })} />
+          <span class="hint">
+            Velja samo za to stran. 100 % je toliko, kot znaša povečava cele pesmarice.
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="stencil">Postavitev</span>
+          <select value=${front.align} onInput=${(e) => setField({ align: e.target.value })}>
+            <option value="start">na vrhu strani</option>
+            <option value="center">na sredini</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="stencil">Naslov na zaslonu</span>
+          <select
+            value=${front.showTitle === null || front.showTitle === undefined ? '' : String(front.showTitle)}
+            onInput=${(e) => setField({
+              showTitle: e.target.value === '' ? null : e.target.value === 'true',
+            })}
+          >
+            <option value="">kot v nastavitvah zaslona</option>
+            <option value="true">pokaži</option>
+            <option value="false">skrij</option>
+          </select>
+        </label>
+
+        ${Object.keys(front.extra || {}).length > 0 && html`<p class="warn">
+          Ta stran ima še zapise, ki jih Pesmarica ne uporablja:
+          ${' ' + Object.keys(front.extra).join(', ')}. Ostanejo, kakršni so.
+        </p>`}
+
+        <p class="hint">Spremembe se zapišejo, ko shraniš stran.</p>`}
+      <menu>
+        <button class="primary" onClick=${() => sheetSettings.current.close()}>Zapri</button>
+      </menu>
+    </dialog>
+
     <dialog class="menu" ref=${menu}>
       <h2>Stran ${editing == null ? '—' : editing}</h2>
+      <button onClick=${() => act(() => sheetSettings.current.showModal())}
+        disabled=${editing == null}>Nastavitve strani</button>
       <button onClick=${() => act(show)} disabled=${editing == null}>Prikaži na zaslonu</button>
       <button onClick=${() => act(renumber)} disabled=${editing == null}
         title="Številka je vrstni red">Preštevilči</button>

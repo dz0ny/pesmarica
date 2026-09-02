@@ -65,6 +65,15 @@ one for its own sake.
 
 ## Things that will bite you
 
+**The editor never shows front matter.** `GET /api/pages/<n>` hands the web
+interface `body` (no header) and `front` (the fields, plus `extra` for keys we
+do not interpret); a JSON `PUT` composes it again through `SongPage.copyWith`
+and `toSource`, which is the same code the display parses with. A raw-markdown
+`PUT` still works for scripts -- the content type is what picks the path. Never
+compose that header in JavaScript: `title` and `showTitle` are both nullable
+*with meaning*, which is why `copyWith` has `clearTitle`/`clearShowTitle`
+rather than treating null as "unchanged".
+
 **The page number is the file name, and the file name is the order.** There is
 no index to reorder, so `Songbook.renumberPage` renames the file -- and rebuilds
 the slug from the current title while it is there. It refuses an occupied

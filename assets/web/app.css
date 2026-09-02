@@ -397,6 +397,11 @@ dialog h2 { margin: 0 0 4px; font-size: 15px; letter-spacing: .06em; text-transf
 .field.inline { grid-auto-flow: column; justify-content: start; align-items: center; gap: 10px; }
 .field .stencil { display: block; }
 dialog menu { display: flex; gap: 8px; justify-content: flex-end; margin: 20px 0 0; padding: 0; }
+.hint { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.field input[type=range] { width: 100%; accent-color: var(--brass); padding: 0; }
+dialog h2 + .field { margin-top: 10px; }
+.field + .field { margin-top: 16px; }
+
 .warn {
   margin: 14px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
   background: var(--warn-bg); border: 1px solid var(--warn-edge); color: var(--warn-fg);

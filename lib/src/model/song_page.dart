@@ -150,18 +150,32 @@ class SongPage {
     return FrontMatter.compose(values, body ?? this.body);
   }
 
+  /// [clearTitle] and [clearShowTitle] are how a caller says "back to the
+  /// default" rather than "leave it alone": both fields mean something when
+  /// they are null -- the title falls back to the body heading, and showTitle
+  /// falls back to the songbook-wide switch -- so null cannot also mean
+  /// "unchanged". Same shape as `Settings.copyWith(clearPassword:)`.
   SongPage copyWith({
+    String? declaredTitle,
     double? scale,
     PageAlign? align,
-  }) => SongPage(
-    number: number,
-    path: path,
-    declaredTitle: declaredTitle,
-    title: title,
-    body: body,
-    scale: scale == null ? this.scale : clampScale(scale),
-    align: align ?? this.align,
-    showTitle: showTitle,
-    extra: extra,
-  );
+    bool? showTitle,
+    String? body,
+    bool clearTitle = false,
+    bool clearShowTitle = false,
+  }) {
+    final nextTitle = clearTitle ? null : (declaredTitle ?? this.declaredTitle);
+    final nextBody = body ?? this.body;
+    return SongPage(
+      number: number,
+      path: path,
+      declaredTitle: nextTitle,
+      title: nextTitle ?? _derivedTitle(nextBody, path),
+      body: nextBody,
+      scale: scale == null ? this.scale : clampScale(scale),
+      align: align ?? this.align,
+      showTitle: clearShowTitle ? null : (showTitle ?? this.showTitle),
+      extra: extra,
+    );
+  }
 }
