@@ -25,6 +25,20 @@ class Songbook extends ChangeNotifier {
   List<SongPage> get pages => List<SongPage>.unmodifiable(_pages);
   Settings get settings => _settings;
 
+  int _revision = 0;
+
+  /// Bumped every time anything here changes. The web interface polls a few
+  /// bytes to compare it, and only re-fetches the page list when it moved --
+  /// a songbook of a thousand pages is a large answer to send a phone every
+  /// three seconds to tell it nothing happened.
+  int get revision => _revision;
+
+  @override
+  void notifyListeners() {
+    _revision++;
+    super.notifyListeners();
+  }
+
   /// Last load/save failure, surfaced on screen instead of a blank display.
   String? get error => _error;
 
@@ -250,6 +264,34 @@ class Songbook extends ChangeNotifier {
     await _write(file, source);
     await reload();
     return free;
+  }
+
+  /// Files a page under a different number, which is the only way to change
+  /// the order: the number in the file name *is* the position, both here and
+  /// on the keypad, and there is no separate index to reorder.
+  ///
+  /// The slug is rebuilt from the page's current title along the way, so a page
+  /// renamed in the editor stops carrying the name it was created with.
+  Future<int> renumberPage(int from, int to) async {
+    final index = indexOfNumber(from);
+    if (index < 0) throw ArgumentError('Ni strani $from.');
+    if (to == from) return to;
+    if (to < 1) throw ArgumentError('Številka mora biti večja od 0.');
+    if (indexOfNumber(to) >= 0) throw ArgumentError('Stran $to že obstaja.');
+
+    final page = _pages[index];
+    final file = File(page.path);
+    final target = File(
+      p.join(
+        root.path,
+        '${to.toString().padLeft(3, '0')}-${_slug(page.title)}.md',
+      ),
+    );
+    _selfWrites[p.normalize(file.path)] = DateTime.now();
+    _selfWrites[p.normalize(target.path)] = DateTime.now();
+    await file.rename(target.path);
+    await reload();
+    return to;
   }
 
   int _nextFreeNumber() =>

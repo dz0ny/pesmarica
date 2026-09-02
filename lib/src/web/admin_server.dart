@@ -100,30 +100,51 @@ class AdminServer {
 
   /// One password, no user name, remembered in a cookie until it changes.
   ///
-  /// The login page and its own assets stay open, or there would be no way to
-  /// reach the form; everything else needs the cookie. API calls get a bare
-  /// 401 so the browser can redirect itself, while a navigation gets a real
-  /// redirect so that typing the address of a protected page just works.
+  /// The password guards *editing*, not the room. Whoever is in the hall is
+  /// already allowed to see the words on the wall, so the remote -- reading the
+  /// page list and moving the display -- is open to anyone on the access point,
+  /// and the password is what stands between them and rewriting the songbook.
+  /// That is also what makes it worth setting: before, a password locked out
+  /// the person you actually wanted driving the screen.
+  ///
+  /// API calls get a bare 401 so the page can react, while a navigation to the
+  /// management page gets a real redirect, so typing the address just works.
   Handler _auth(Handler inner) => (Request request) async {
     final credentials = _credentials;
     if (credentials == null) return inner(request);
 
     final path = '/${request.url.path}';
-    if (path == '/login' ||
-        path == '/api/login' ||
-        path == '/static/login.js' ||
-        path == '/static/app.css' ||
-        path == '/static/favicon.svg') {
-      return inner(request);
-    }
-
+    if (_isOpen(request.method, path)) return inner(request);
     if (credentials.matches(_presentedSecret(request))) return inner(request);
 
     if (path.startsWith('/api/')) {
-      return Response.unauthorized('Potrebna je prijava.\n');
+      return Response.unauthorized('Potrebno je geslo.\n');
     }
     return Response.found('/login?next=${Uri.encodeComponent(path)}');
   };
+
+  static final RegExp _remoteShow = RegExp(r'^/api/show/[0-9]+$');
+
+  /// Whether a request is part of the remote, and so needs no password.
+  ///
+  /// Reading is open and writing is not, with two deliberate exceptions in each
+  /// direction: `/manage` reads nothing but is the door to everything, so it
+  /// asks; and the three navigation calls write nothing to the card -- they
+  /// only move the display, which is the whole point of the remote.
+  static bool _isOpen(String method, String path) {
+    if (path == '/manage') return false;
+    if (method == 'GET' && !path.startsWith('/api/')) return true;
+    if (path == '/api/login' || path == '/api/logout') return true;
+    if (method == 'GET' && (path == '/api/remote' || path == '/api/songbook')) {
+      return true;
+    }
+    if (method == 'POST') {
+      return path == '/api/next' ||
+          path == '/api/prev' ||
+          _remoteShow.hasMatch(path);
+    }
+    return false;
+  }
 
   /// The cookie, or the header equivalent so that curl and cron can work
   /// without pretending to be a browser.
@@ -150,25 +171,29 @@ class AdminServer {
 
   Router get _router => Router()
     ..get('/', (Request r) => _page('index.html'))
+    ..get('/manage', (Request r) => _page('manage.html'))
     ..get('/login', (Request r) => _page('login.html'))
     ..get('/favicon.ico', (Request r) => _assets.serve(r, 'favicon.svg'))
     ..get('/static/<name|[A-Za-z0-9._-]+>', _assets.serve)
     ..post('/api/login', _login)
     ..post('/api/logout', _logout)
+    ..get('/api/remote', (Request r) => _json(_remoteState()))
+    ..get('/api/songbook', (Request r) => _json(_songbook()))
     ..get('/api/state', (Request r) => _json(_state()))
     ..get('/api/pages/<number|[0-9]+>', _getPage)
     ..put('/api/pages/<number|[0-9]+>', _putPage)
     ..delete('/api/pages/<number|[0-9]+>', _deletePage)
     ..post('/api/pages', _createPage)
+    ..post('/api/pages/<number|[0-9]+>/renumber', _renumber)
     ..post('/api/import', _importPage)
     ..post('/api/show/<number|[0-9]+>', _show)
     ..post('/api/next', (Request r) {
       presenter.next();
-      return _json(_state());
+      return _json(_remoteState());
     })
     ..post('/api/prev', (Request r) {
       presenter.previous();
-      return _json(_state());
+      return _json(_remoteState());
     })
     ..put('/api/settings', _putSettings)
     ..post('/api/update', _installBundle)
@@ -245,8 +270,34 @@ class AdminServer {
     },
   );
 
+  /// The polled answer: which page is up, and a counter that says whether the
+  /// songbook itself has moved since the caller last asked.
+  ///
+  /// Deliberately tiny. Every phone in the room holds this open on a timer, and
+  /// the box serving them is a Zero 2 W: the common case is "nothing changed",
+  /// and it should cost about sixty bytes to say so. The list itself lives in
+  /// [_songbook], fetched once and again only when [Songbook.revision] moves.
+  ///
+  /// Kept apart from [_state] because this one is served without a password, so
+  /// it carries no settings and no version of the software.
+  Map<String, Object?> _remoteState() => <String, Object?>{
+    'current': presenter.current?.number,
+    'protected': songbook.settings.isProtected,
+    'rev': songbook.revision,
+  };
+
+  /// The page list, for whoever is browsing rather than driving.
+  Map<String, Object?> _songbook() => <String, Object?>{
+    'rev': songbook.revision,
+    'pages': <Map<String, Object?>>[
+      for (final page in songbook.pages)
+        <String, Object?>{'number': page.number, 'title': page.title},
+    ],
+  };
+
   Map<String, Object?> _state() => <String, Object?>{
     'current': presenter.current?.number,
+    'rev': songbook.revision,
     'protected': songbook.settings.isProtected,
     'settings': songbook.settings.toJson(),
     'update': slots.describe(),
@@ -306,6 +357,22 @@ class AdminServer {
     }
   }
 
+  /// Moves a page to another number, which is what changing the running order
+  /// means here: the number is the position.
+  Future<Response> _renumber(Request request, String number) async {
+    final body = await _readJson(request);
+    final wanted = (body['number'] as num?)?.toInt();
+    if (wanted == null) {
+      return _json(<String, Object?>{'error': 'Manjka številka.'}, status: 400);
+    }
+    try {
+      await songbook.renumberPage(int.parse(number), wanted);
+      return _json(<String, Object?>{'number': wanted, ..._state()});
+    } on ArgumentError catch (e) {
+      return _json(<String, Object?>{'error': e.message}, status: 409);
+    }
+  }
+
   /// Takes a dropped `.md` file. The body is the raw markdown; `?name=` is
   /// the original file name, which is where the page number comes from.
   Future<Response> _importPage(Request request) async {
@@ -340,7 +407,7 @@ class AdminServer {
 
   Response _show(Request request, String number) {
     final ok = presenter.goToNumber(int.parse(number));
-    return _json(<String, Object?>{'ok': ok, ..._state()});
+    return _json(<String, Object?>{'ok': ok, ..._remoteState()});
   }
 
   Future<Response> _putSettings(Request request) async {

@@ -1,4 +1,4 @@
-const form = document.getElementById('login');
+const form = document.getElementById('unlock');
 const error = document.getElementById('error');
 
 form.addEventListener('submit', async (event) => {
@@ -11,7 +11,7 @@ form.addEventListener('submit', async (event) => {
   });
   if (response.ok) {
     // The server set the cookie; go wherever the operator was headed.
-    location.href = new URLSearchParams(location.search).get('next') || '/';
+    location.href = new URLSearchParams(location.search).get('next') || '/manage';
     return;
   }
   error.hidden = false;

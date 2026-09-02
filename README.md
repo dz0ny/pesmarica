@@ -44,7 +44,7 @@ know from PowerPoint — type a number, press Enter.
 - A management page with a formatting toolbar and a preview of the real layout
 - Automatic type fitting, so one songbook reads correctly on 1080p and 4K
 - Four bundled fonts covering č/š/ž/ć/đ, nothing fetched at runtime
-- Optional password, hashed on first load and never stored in the clear
+- A phone remote anyone in the room can use, and editing behind a password
 - Survives losing mains power mid-write
 - An appliance image that defines the whole system in one place
 
@@ -56,12 +56,13 @@ know from PowerPoint — type a number, press Enter.
 | Display | Automatic type fitting, per-page magnification, two-colour rendering |
 | Orientation | 90/180/270° rotation for panels mounted sideways |
 | Controls | Keypad, presenter remote, arrow keys, touch halves, or the web page |
-| Web interface | Formatting toolbar, live preview, create and delete pages, drive the screen |
+| Remote | Phone-sized keypad, page index and step buttons; no password needed |
+| Web interface | Formatting toolbar, live preview, create, renumber and delete pages |
 | Import | Drop `.md` files onto the page list, or images into the editor |
 | Network | Always an access point; every name resolves to the box |
 | Songbook storage | Its own exFAT partition — pull the card and edit on any laptop |
 | Recovery | A rejected access point config is replaced with the shipped default |
-| Security | One password, salted and hashed; cookie or `X-Pesmarica-Auth` header |
+| Security | One password over editing, salted and hashed; cookie or `X-Pesmarica-Auth` header |
 | Appliance | NixOS image with the unit files, network, and paths defined once |
 | Updates | Two app slots, an atomic flip, and an automatic revert if the new one will not start |
 | Durability | Atomic writes; nothing is written to the card unless somebody edits a page |
@@ -284,10 +285,38 @@ sign-in sheet open on it by themselves.
 
 ## Web interface
 
-The app serves a management page on port 8080 (`http://192.168.4.1:8080`, or
-`:8080` on whatever address you reach it at). It lists the pages, edits them as
-raw markdown, creates and deletes them, drives the display remotely, and sets
-the polarity, font and global magnification.
+The app serves two pages on port 8080 (`http://192.168.4.1:8080`, or `:8080` on
+whatever address you reach it at).
+
+### The remote — `/`
+
+What almost everybody ever opens. A page number set large enough to read from
+the back of the room, **Nazaj** / **Naprej**, and a keypad: type the number and
+press **Pokaži**, exactly as on the keypad wired to the box. **Poišči po
+naslovu** opens the songbook index over it for whoever knows the song by its
+first line. A laptop's own keyboard works too — digits, Enter, Backspace and
+the arrow keys do what they do on the box.
+
+The remote needs no password, on purpose: whoever is in the hall is already
+looking at the words on the wall, and the person free to run the screen on a
+Sunday morning is rarely the person who knows the password. The lamp beside the
+wordmark is lit while the box is answering.
+
+It polls the box every three seconds for two things — the page on screen, and a
+counter that moves whenever the songbook does — which is about sixty bytes, so a
+room full of phones costs the Pi nothing. The page list is fetched again only
+when that counter moves, and the index draws the first 120 matches and says how
+many more there are, because a thousand buttons is not a list anybody scrolls.
+
+**Svetlo** / **Temno** switches the skin; the first answer comes from the
+phone's own setting and the choice sticks to that device.
+
+### Urejanje — `/manage`
+
+The half that writes: the page list, the markdown editor and its toolbar, a
+preview of the real layout, and **Nastavitve** for polarity, font, global
+magnification, rotation and titles. This is what the password guards, and what
+**Posodobi program** lives behind.
 
 ### Rotation
 
@@ -297,6 +326,19 @@ itself: it is a flutter-pi startup flag, so saving it restarts the display. The
 screen goes black for a moment and comes back turned; the web interface is not
 interrupted. Off the box -- a desktop run -- the setting is stored and ignored.
 
+### Changing the running order
+
+The page number *is* the order — on the keypad, in the list, and in the file
+name — so there is nothing separate to drag. **Preštevilči** in the editor files
+the open page under another number and renames its file to match; the title
+comes from the `#` heading, so renaming a page is editing that line. A number
+that is already taken is refused rather than overwritten, so nothing is lost by
+trying.
+
+On a phone the page list is behind **Strani** in the editor bar rather than
+beside the text, because stacked they leave a slot too small to write a verse
+in.
+
 ### Writing tools
 
 A toolbar over the editor covers what a songbook page needs without knowing any
@@ -305,7 +347,7 @@ bullet list, a verse break, and a file picker for images. Each button toggles,
 so pressing it again takes the markup off.
 
 **Predogled** (⌘P) renders the page as the screen will lay it out. It is a
-small renderer written into `app.js` rather than a markdown library, because
+small renderer written into `markdown.js` rather than a markdown library, because
 the box is offline and this page has to work when nothing can be fetched --
 it covers headings, emphasis, blockquotes, lists, code and images, and nothing
 more.
@@ -333,8 +375,22 @@ On the next start Pesmarica salts and hashes it, rewrites the file without the
 plaintext, and starts asking for it. There is no user name — one password for
 the screen, entered once per device and remembered for ten years in an
 `HttpOnly` cookie, so a reboot or a month unplugged does not log anyone out.
-Changing the password invalidates every device at once; `Odjava` in the header
+Changing the password invalidates every device at once; `Zakleni` in the header
 signs out just the one in front of you.
+
+The password guards **editing, not the room**. With one set:
+
+| Open to anyone on the access point | Behind the password |
+| --- | --- |
+| The remote and its assets | `/manage` and the editor |
+| `GET /api/remote`, `GET /api/songbook` | `GET /api/state`, `GET /api/pages/<n>` |
+| `POST /api/next`, `/api/prev`, `/api/show/<n>` | everything that writes a page, a setting or a bundle |
+
+Reading is open and writing is not, with one exception in each direction:
+`/manage` reads nothing but is the door to everything, so it asks; and the three
+navigation calls write nothing to the card — they only move the display, which
+is the whole point of the remote. Setting a password used to lock out exactly
+the person you wanted driving the screen; now it does not.
 
 Scripts can send the same secret as an `X-Pesmarica-Auth` header instead of a
 cookie; the value is the `passwordHash` from `settings.json`.
@@ -383,8 +439,11 @@ flutter test
 ```
 
 The web interface is served from `assets/web/` through the Flutter asset bundle,
-so editing `app.css`, `app.js` or `index.html` needs a restart (a hot restart is
-enough) to be picked up — there is no separate build step for it.
+so editing anything in it needs a restart (a hot restart is enough) to be picked
+up — there is no separate build step for it. The pages are Preact with
+[htm](https://github.com/developit/htm), vendored whole into
+`assets/web/preact.js` and loaded as an ES module, so the browser runs exactly
+what is in the repository and the box never fetches anything.
 
 See [CLAUDE.md](CLAUDE.md) for the layout of `lib/` and the handful of things
 that will bite you when changing the code.

@@ -52,10 +52,10 @@ lib/
   src/update/bundle_slots.dart   the two app slots: format, staging, commit
   src/update/bundle_installer.dart an uploaded .tar -> the slot that is idle
   src/ui/                    presenter screen, page rendering, overlays
-  src/web/admin_server.dart  shelf routes, cookie auth
-  src/web/static_assets.dart serves assets/web/ from the Flutter bundle
+  src/web/admin_server.dart  shelf routes, cookie auth, the open/gated split
+  src/web/static_assets.dart serves the web files out of the Flutter bundle
   src/web/credentials.dart   salt, hash, constant-time compare
-assets/web/                  the admin UI: html, css, js, favicon
+assets/web/                  the two pages: remote (/) and manage (/manage)
 nix/                         the appliance image (flake, module, Makefile)
 ```
 
@@ -64,6 +64,11 @@ nix/                         the appliance image (flake, module, Makefile)
 one for its own sake.
 
 ## Things that will bite you
+
+**The page number is the file name, and the file name is the order.** There is
+no index to reorder, so `Songbook.renumberPage` renames the file -- and rebuilds
+the slug from the current title while it is there. It refuses an occupied
+number rather than overwriting; `renumber_test.dart` pins that.
 
 **The content folder is the only database.** Zoom and titles live
 in each page's front matter; global settings live in `settings.json` beside the
@@ -95,8 +100,8 @@ picks a named instance that a single-file variable font does not have, so bold
 silently does nothing. Always go through `fontStyle()` in `page_style.dart`,
 which sets `fontVariations` alongside `fontWeight`.
 
-**The preview renderer must follow the display.** `assets/web/app.js` renders
-markdown itself — a library would need a build step and a network the box does
+**The preview renderer must follow the display.** `assets/web/markdown.js`
+renders markdown itself — a library would need a build step and a network the box does
 not have. It mirrors what `MarkdownBody` does, including `softLineBreak: true`
 in `page_view.dart`: change how the screen lays a page out and the preview has
 to change with it, or it quietly starts lying.
@@ -118,9 +123,34 @@ the mount, `umask=0077`) so nothing may `chmod` there, and no journal, so a
 power cut mid-write can cost more than the file being written.
 
 **The web UI lives in `assets/web/`, not in Dart.** It is served through
-`rootBundle`, so a change to `app.css`/`app.js`/`index.html` needs a restart to
-show up, and a new file must be added to both `StaticAssets.allowed` and the
-`assets:` list in `pubspec.yaml` or it will 404.
+`rootBundle`, so any change there needs a restart to show up, and a new file
+must be added to both `StaticAssets.allowed` (a name -> bundle path map, so it
+can serve the typeface out of `assets/fonts/` too) and the `assets:` list in
+`pubspec.yaml` or it will 404. `static_assets_test.dart` checks that every
+`/static/...` URL in the pages *and in the modules* has an entry.
+
+**The password guards editing, not the room.** `/` is the remote and is open to
+anyone on the access point; `/manage` and everything that writes is not. The
+rule lives in one place, `AdminServer._isOpen`, and `remote_access_test.dart`
+pins it. The three navigation calls are open because they write nothing to the
+card -- anything new that does write belongs on the gated side.
+
+**The remote polls, so the poll has to stay small.** `/api/remote` answers with
+the current page and `Songbook.revision`, and nothing else; the page list is a
+separate `/api/songbook` that clients fetch again only when that number moves.
+`Songbook.notifyListeners` is overridden to bump it, so any change anywhere is
+covered. Do not put the page list back into the polled response: a hymnal is
+forty kilobytes, and every phone in the room holds that poll open.
+
+**The pages are Preact + htm, vendored, with no build step.** `preact.js` is the
+`htm/preact/standalone` bundle copied in whole -- replace the file to upgrade,
+never edit it. The modules are plain ES modules loaded by URL, so they must
+import each other as `/static/x.js`, not by relative path.
+
+**Every colour is a token in `:root`.** There are two skins, dark and light,
+selected by `data-skin` on `<html>` -- set by an inline script in each page
+before the stylesheet paints. A literal hex anywhere else is a bug: it will look
+right in one skin and wrong in the other.
 
 **The access point is the only way into the box, and the app no longer touches
 it.** `hostapd.conf` lives on the data partition beside the songbook, which is
@@ -197,6 +227,10 @@ over a temp songbook — fast, and where most logic belongs.
 `test/render_test.dart` and `test/title_test.dart` are widget tests over a real
 `PresenterScreen`. `test/bundle_slots_test.dart` covers the update slots, and
 `tool/test_launcher.sh` covers the rollback side of them in shell.
+`test/remote_access_test.dart` starts a real server on a temp songbook and
+pins which routes need the password -- note that it has to null out
+`HttpOverrides.global`, because the test binding stubs `HttpClient` into
+returning 400 for everything.
 
 Prefer asserting on values the app actually computes (e.g. the
 `MarkdownStyleSheet` font size) over walking the render tree; finder-based

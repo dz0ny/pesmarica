@@ -2,16 +2,28 @@
 <html lang="sl">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pesmarica</title>
+<meta name="theme-color" content="#1e1a15">
+<title>Pesmarica — geslo</title>
 <link rel="icon" href="/static/favicon.svg">
+<script>
+  // Before the stylesheet paints, or the page flashes the wrong skin.
+  var saved = null;
+  try { saved = localStorage.getItem('pesmarica-skin'); } catch (e) { /* private mode */ }
+  document.documentElement.dataset.skin =
+    saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+</script>
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/login.js" defer></script>
 
-<form id="login" autocomplete="on">
-  <h1>Pesmarica</h1>
-  <label for="password">Geslo</label>
-  <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
-  <button type="submit" class="primary">Naprej</button>
-  <p id="error" class="error" hidden>Napačno geslo.</p>
-  <p class="hint">Prijava se zapomni na tej napravi.</p>
+<form class="unlock" id="unlock" autocomplete="on">
+  <h1>Urejanje</h1>
+  <p>Daljinec deluje brez gesla. Geslo odklene urejanje pesmarice.</p>
+  <label class="field">
+    <span class="stencil">Geslo</span>
+    <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+  </label>
+  <button type="submit" class="primary">Odkleni</button>
+  <p id="error" class="bad" hidden>Geslo ni pravo.</p>
+  <p>Naprava si geslo zapomni.</p>
+  <p><a class="link" href="/">Nazaj na daljinec</a></p>
 </form>

@@ -28,6 +28,9 @@ flutter:
 
   assets:
     - assets/web/
+    # The remote sets its page numbers in the same face the wall does, so the
+    # web interface serves this one straight out of the bundle.
+    - assets/fonts/AtkinsonHyperlegible-Regular.ttf
 
   fonts:
     - family: Inter

@@ -14,26 +14,34 @@ import 'package:shelf/shelf.dart';
 /// to the deploy layout. Reading through [rootBundle] works the same in a
 /// desktop debug run, a widget test and a release bundle.
 class StaticAssets {
-  StaticAssets({this.prefix = 'assets/web'});
-
-  final String prefix;
+  StaticAssets();
 
   final Map<String, _Asset> _cache = <String, _Asset>{};
 
-  /// Files the interface is allowed to hand out. An allowlist rather than path
-  /// sanitising: the set is small, known at build time, and this way a traversal
-  /// bug cannot exist.
-  static const Set<String> allowed = <String>{
-    'index.html',
-    'login.html',
-    'app.css',
-    'app.js',
-    'login.js',
-    'favicon.svg',
+  /// The files the interface may hand out, mapped to where they sit in the
+  /// bundle. An allowlist rather than path sanitising: the set is small, known
+  /// at build time, and this way a traversal bug cannot exist.
+  ///
+  /// The typeface is the one exception to "everything under assets/web": the
+  /// remote sets its page numbers in the same face the wall does, and there is
+  /// no reason to keep a second copy of the file to say so.
+  static const Map<String, String> allowed = <String, String>{
+    'index.html': 'assets/web/index.html',
+    'manage.html': 'assets/web/manage.html',
+    'login.html': 'assets/web/login.html',
+    'app.css': 'assets/web/app.css',
+    'common.js': 'assets/web/common.js',
+    'remote.js': 'assets/web/remote.js',
+    'manage.js': 'assets/web/manage.js',
+    'markdown.js': 'assets/web/markdown.js',
+    'preact.js': 'assets/web/preact.js',
+    'login.js': 'assets/web/login.js',
+    'favicon.svg': 'assets/web/favicon.svg',
+    'atkinson.ttf': 'assets/fonts/AtkinsonHyperlegible-Regular.ttf',
   };
 
   Future<Response> serve(Request request, String name) async {
-    if (!allowed.contains(name)) return Response.notFound('Ni najdeno.\n');
+    if (!allowed.containsKey(name)) return Response.notFound('Ni najdeno.\n');
     final asset = await _load(name);
 
     // Assets only change when the app is redeployed, so let the browser keep
@@ -54,7 +62,7 @@ class StaticAssets {
     final cached = _cache[name];
     if (cached != null) return cached;
 
-    final data = await rootBundle.load('$prefix/$name');
+    final data = await rootBundle.load(allowed[name]!);
     final bytes = data.buffer.asUint8List(
       data.offsetInBytes,
       data.lengthInBytes,
@@ -84,6 +92,8 @@ class StaticAssets {
         return 'image/svg+xml';
       case '.json':
         return 'application/json; charset=utf-8';
+      case '.ttf':
+        return 'font/ttf';
       default:
         return 'application/octet-stream';
     }

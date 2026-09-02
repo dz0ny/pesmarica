@@ -1,0 +1,578 @@
+// Urejanje: the workshop behind the remote.
+//
+// Everything here writes -- to a page, to settings.json, or to the slot the box
+// runs its own software out of -- which is why this half is what the password
+// guards and `/` is not.
+
+import { html, render, useEffect, useLayoutEffect, useRef, useState } from '/static/preact.js';
+import { api, flipSkin, json, skin } from '/static/common.js';
+import { previewHtml } from '/static/markdown.js';
+
+/// How many rows the shelf draws at once; the rest are one search away. A
+/// songbook can hold a whole hymnal, and a list of a thousand buttons is slow
+/// to build and useless to scroll.
+const MOST_ROWS = 120;
+
+const isMarkdown = (file) => /\.(md|markdown|txt)$/i.test(file.name);
+const isImage = (file) => file.type.startsWith('image/');
+
+/// Which of the two bundles the box is running, and whether it is still on
+/// trial -- the operator should be able to tell a finished update from one that
+/// is about to be rolled back.
+function version(update) {
+  if (!update) return '';
+  const running = (update.slots || []).find((s) => s.slot === update.active);
+  const name = (running && running.version) || update.active;
+  return update.onTrial
+    ? 'različica ' + name + ' · na preizkusu'
+    : 'različica ' + name;
+}
+
+/// The songbook list. It is the sidebar on a laptop and a modal on a phone,
+/// where a permanent list would leave the editor a slot too small to write in.
+function PageList({ pages, find, setFind, editing, live, onPick, onCreate }) {
+  const needle = find.trim().toLowerCase();
+  const matching = needle
+    ? pages.filter((page) =>
+        String(page.number).startsWith(needle) || page.title.toLowerCase().includes(needle))
+    : pages;
+  const shown = matching.slice(0, MOST_ROWS);
+
+  return html`
+    <div class="shelf-head">
+      <input
+        class="find" type="text" inputmode="search" placeholder="Poišči stran"
+        value=${find} onInput=${(e) => setFind(e.target.value)}
+      />
+      <button onClick=${onCreate}>Nova stran</button>
+    </div>
+    <div class="pages">
+      ${shown.map((page) => html`
+        <button
+          class=${'page-row' + (page.number === editing ? ' on' : '')}
+          onClick=${() => onPick(page.number)}
+        >
+          <span class="n">${page.number}</span>
+          <span class="t">${page.title}</span>
+          <span class="stencil">
+            ${page.number === live ? 'na zaslonu' : ''}
+            ${page.scale !== 1 ? Math.round(page.scale * 100) + '%' : ''}
+          </span>
+        </button>`)}
+      ${pages.length === 0 &&
+        html`<p class="empty-note">Pesmarica je prazna. Začni z <b>Nova stran</b>.</p>`}
+      ${matching.length === 0 && pages.length > 0 &&
+        html`<p class="empty-note">Nič ne ustreza.</p>`}
+      ${matching.length > shown.length &&
+        html`<p class="empty-note">Še ${matching.length - shown.length} strani — poišči jih.</p>`}
+    </div>`;
+}
+
+function Manage() {
+  const [state, setState] = useState({ pages: [], settings: {}, fonts: [] });
+  const [editing, setEditing] = useState(null);
+  const [source, setSource] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [note, setNote] = useState({ text: 'Izberi stran.', bad: false });
+  const [light, setLight] = useState(skin() === 'light');
+  const [live, setLive] = useState(null);
+  const [find, setFind] = useState('');
+  const rev = useRef(-1);
+  const area = useRef(null);
+  const settings = useRef(null);
+  const pendingSelection = useRef(null);
+  const imagePicker = useRef(null);
+  const chooser = useRef(null);
+  const menu = useRef(null);
+  const bundlePicker = useRef(null);
+
+  const say = (text, bad = false) => setNote({ text, bad });
+  const s = state.settings;
+
+  /// Everything that writes answers with the whole state, so take the new
+  /// revision from it too and do not go back for what we already hold.
+  const adopt = (next) => {
+    rev.current = next.rev;
+    setState(next);
+    return next;
+  };
+
+  const refresh = async () => adopt(await api('/api/state'));
+
+  // The same cheap poll the remote uses: what is on the screen, and a counter.
+  // The songbook itself is fetched again only when that counter moves.
+  useEffect(() => {
+    const tick = async () => {
+      const now = await api('/api/remote');
+      setLive(now.current);
+      if (now.rev !== rev.current) await refresh();
+    };
+    tick().catch((e) => say(e.message, true));
+    const timer = setInterval(() => { if (!dirty) tick().catch(() => {}); }, 4000);
+    return () => clearInterval(timer);
+  }, [dirty]);
+
+  // --- Pages --------------------------------------------------------------
+
+  const open = async (number) => {
+    if (dirty && !confirm('Neshranjene spremembe. Nadaljujem?')) return;
+    try {
+      const page = await api('/api/pages/' + number);
+      setEditing(number);
+      setSource(page.source);
+      setDirty(false);
+      say('Naložena stran ' + page.number + ' · ' + page.file);
+    } catch (e) { say(e.message, true); }
+  };
+
+  const save = async () => {
+    if (editing == null) return say('Ni izbrane strani.', true);
+    try {
+      adopt(await api('/api/pages/' + editing, { method: 'PUT', body: source }));
+      setDirty(false);
+      say('Shranjeno. Zaslon se osveži sam.');
+    } catch (e) { say(e.message, true); }
+  };
+
+  const create = async () => {
+    const title = prompt('Naslov nove strani:', 'Nova pesem');
+    if (title === null) return;
+    const number = prompt('Številka strani (prazno = naslednja prosta):', '');
+    if (number === null) return;
+    try {
+      const body = number.trim() ? { title, number: Number(number) } : { title };
+      const created = await json('/api/pages', 'POST', body);
+      adopt(created);
+      await open(created.number);
+    } catch (e) { say(e.message, true); }
+  };
+
+  const remove = async () => {
+    if (editing == null) return;
+    if (!confirm('Izbrišem stran ' + editing + '?')) return;
+    try {
+      adopt(await api('/api/pages/' + editing, { method: 'DELETE' }));
+      setEditing(null);
+      setSource('');
+      setDirty(false);
+      say('Izbrisano.');
+    } catch (e) { say(e.message, true); }
+  };
+
+  /// The number is the running order -- there is no separate index to drag, and
+  /// the keypad jumps to the number -- so moving a page means filing it under
+  /// another one. The title is the `#` heading, which is edited in the text.
+  const renumber = async () => {
+    if (editing == null) return;
+    const wanted = prompt('Nova številka strani ' + editing + ':', String(editing));
+    if (wanted === null || !wanted.trim()) return;
+    try {
+      const moved = await json('/api/pages/' + editing + '/renumber', 'POST', {
+        number: Number(wanted),
+      });
+      adopt(moved);
+      setEditing(moved.number);
+      say('Stran je zdaj številka ' + moved.number + '.');
+    } catch (e) { say(e.message, true); }
+  };
+
+  const show = async () => {
+    if (editing == null) return;
+    try {
+      await api('/api/show/' + editing, { method: 'POST' });
+      await refresh();
+      say('Stran ' + editing + ' je na zaslonu.');
+    } catch (e) { say(e.message, true); }
+  };
+
+  // --- Settings -----------------------------------------------------------
+
+  const putSettings = async (patch) => {
+    try { adopt(await json('/api/settings', 'PUT', patch)); }
+    catch (e) { say(e.message, true); }
+  };
+
+  // Rotation is handed to flutter-pi at startup, so the box restarts the
+  // display to apply it. The screen goes black for a moment; this page is
+  // unaffected.
+  const putRotation = (degrees) => {
+    if (!confirm('Zaslon se bo znova zagnal. Nadaljujem?')) return;
+    putSettings({ rotation: Number(degrees) });
+  };
+
+  // --- The editor ---------------------------------------------------------
+  //
+  // Enough markdown to write a hymn without knowing any: emphasis, headings, a
+  // blockquote for the refrain, and a blank line between verses.
+
+  /// Runs an edit over the textarea and keeps the caret where the edit left it.
+  /// The value is controlled, so the selection has to be restored after the
+  /// render rather than inside the handler.
+  const edit = (fn) => {
+    setPreviewing(false);
+    const node = area.current;
+    const result = fn(node.value, node.selectionStart, node.selectionEnd);
+    pendingSelection.current = [result.start, result.end];
+    setSource(result.value);
+    setDirty(true);
+    say('Neshranjeno …');
+  };
+
+  useLayoutEffect(() => {
+    const selection = pendingSelection.current;
+    if (!selection || !area.current) return;
+    pendingSelection.current = null;
+    area.current.focus();
+    area.current.setSelectionRange(selection[0], selection[1]);
+  });
+
+  /// Puts `mark` on both sides of the selection, or takes it off again when it
+  /// is already there, so the same button undoes itself.
+  const wrap = (mark) => edit((value, start, end) => {
+    const before = value.slice(0, start);
+    const selected = value.slice(start, end);
+    const after = value.slice(end);
+    if (before.endsWith(mark) && after.startsWith(mark)) {
+      return {
+        value: before.slice(0, -mark.length) + selected + after.slice(mark.length),
+        start: start - mark.length,
+        end: end - mark.length,
+      };
+    }
+    return {
+      value: before + mark + selected + mark + after,
+      start: start + mark.length,
+      end: end + mark.length,
+    };
+  });
+
+  /// Prefixes every line the selection touches, and removes the prefix when all
+  /// of them already carry it.
+  const prefixLines = (mark) => edit((value, start, end) => {
+    const from = value.lastIndexOf('\n', start - 1) + 1;
+    const to = value.indexOf('\n', end);
+    const stop = to === -1 ? value.length : to;
+    const lines = value.slice(from, stop).split('\n');
+    const has = lines.every((line) => line.startsWith(mark));
+    const next = lines
+      .map((line) => (has ? line.slice(mark.length) : mark + line))
+      .join('\n');
+    return {
+      value: value.slice(0, from) + next + value.slice(stop),
+      start: from,
+      end: from + next.length,
+    };
+  });
+
+  /// A blank line is what separates verses on screen, and the thing operators
+  /// most often forget.
+  const verseBreak = () => edit((value, start) => ({
+    value: value.slice(0, start) + '\n\n' + value.slice(start),
+    start: start + 2,
+    end: start + 2,
+  }));
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') { e.preventDefault(); save(); }
+      if (key === 'p') { e.preventDefault(); setPreviewing((on) => !on); }
+      if (e.target === area.current && key === 'b') { e.preventDefault(); wrap('**'); }
+      if (e.target === area.current && key === 'i') { e.preventDefault(); wrap('*'); }
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [source, editing]);
+
+  // --- Import and images --------------------------------------------------
+
+  const importMarkdown = async (files) => {
+    const wanted = files.filter(isMarkdown);
+    if (!wanted.length) return say('Na seznam spusti .md datoteke.', true);
+    let last = null;
+    for (const file of wanted) {
+      try {
+        const result = await api('/api/import?name=' + encodeURIComponent(file.name), {
+          method: 'POST', body: await file.text(),
+        });
+        adopt(result);
+        last = result.number;
+      } catch (e) { say(file.name + ': ' + e.message, true); }
+    }
+    if (last !== null) {
+      say(wanted.length + ' uvoženih strani.');
+      await open(last);
+    }
+  };
+
+  const insertImages = async (files) => {
+    const wanted = files.filter(isImage);
+    if (!wanted.length) return say('V besedilo spusti slikovne datoteke.', true);
+    if (editing == null) return say('Najprej izberi stran.', true);
+    for (const file of wanted) {
+      try {
+        const result = await api('/api/images?name=' + encodeURIComponent(file.name), {
+          method: 'POST', body: file,
+        });
+        edit((value, start) => ({
+          value: value.slice(0, start) + '\n' + result.markdown + '\n' + value.slice(start),
+          start: start + result.markdown.length + 2,
+          end: start + result.markdown.length + 2,
+        }));
+        say('Slika dodana: ' + result.path + ' — ne pozabi shraniti.');
+      } catch (e) { say(file.name + ': ' + e.message, true); }
+    }
+  };
+
+  // --- Posodobitev --------------------------------------------------------
+  // The new bundle goes into the slot that is not running, so the upload itself
+  // changes nothing; the box only switches when it restarts at the end. If the
+  // new version does not come up, the box reverts to this one on its own.
+
+  const install = async (file) => {
+    if (!confirm('Namestim ' + file.name + '? Zaslon se bo znova zagnal.')) return;
+    say('Nalagam ' + file.name + ' — ne izklapljaj naprave.');
+    try {
+      const name = file.name.replace(/\.(tar\.gz|tgz|tar)$/i, '');
+      await api('/api/update?version=' + encodeURIComponent(name), {
+        method: 'POST', body: file,
+      });
+      say('Nameščeno. Zaslon se zaganja z novo različico.');
+    } catch (e) { say('Posodobitev: ' + e.message, true); }
+  };
+
+  // --- Drag and drop ------------------------------------------------------
+  // Markdown dropped on the list becomes new pages; images dropped on the
+  // editor are uploaded and referenced at the cursor. A drop anywhere else
+  // would make the browser navigate to the file, silently losing unsaved work.
+
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    const over = (e) => e.preventDefault();
+    const enter = (e) => {
+      if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+        setDragging(true);
+      }
+    };
+    const leave = (e) => { if (!e.relatedTarget) setDragging(false); };
+    const drop = (e) => { e.preventDefault(); setDragging(false); };
+    addEventListener('dragover', over);
+    addEventListener('dragenter', enter);
+    addEventListener('dragleave', leave);
+    addEventListener('drop', drop);
+    return () => {
+      removeEventListener('dragover', over);
+      removeEventListener('dragenter', enter);
+      removeEventListener('dragleave', leave);
+      removeEventListener('drop', drop);
+    };
+  }, []);
+
+  const dropZone = (handler) => ({
+    onDragOver: (e) => { e.preventDefault(); e.currentTarget.classList.add('dropping'); },
+    onDragLeave: (e) => e.currentTarget.classList.remove('dropping'),
+    onDrop: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.classList.remove('dropping');
+      setDragging(false);
+      handler(Array.from(e.dataTransfer ? e.dataTransfer.files : []));
+    },
+  });
+
+  // --- Render -------------------------------------------------------------
+
+  const openSettings = () => settings.current.showModal();
+  const openChooser = () => { setFind(''); chooser.current.showModal(); };
+  const flip = () => setLight(flipSkin() === 'light');
+  const lock = async () => {
+    await fetch('/api/logout', { method: 'POST' });
+    location.href = '/';
+  };
+
+  /// Runs one of the sheet's actions from the phone menu, which has to get out
+  /// of the way first -- two stacked dialogs would leave the operator tapping
+  /// Zapri twice, and a confirm() behind a modal is a trap.
+  const act = (action) => {
+    menu.current.close();
+    action();
+  };
+
+  const onSheet = state.pages.find((page) => page.number === editing);
+  const title = onSheet ? onSheet.title : '';
+
+  const listProps = {
+    pages: state.pages,
+    find,
+    setFind,
+    editing,
+    live,
+    onCreate: create,
+    onPick: (number) => {
+      if (chooser.current.open) chooser.current.close();
+      open(number);
+    },
+  };
+
+  const tool = (label, title, onClick) =>
+    html`<button title=${title} onClick=${onClick}>${label}</button>`;
+
+  return html`
+    <header class="top">
+      <span class="mark"><b></b><span class="on-desk">Urejanje</span></span>
+      <span class="now on-phone">
+        ${editing == null
+          ? html`<span class="stencil">Ni izbrane strani</span>`
+          : html`<span class="n">${editing}</span> ${title}`}
+      </span>
+      <span class="grow"></span>
+      <span class="stencil on-desk">${version(state.update)}</span>
+      <button class="quiet on-desk" onClick=${openSettings}>Nastavitve</button>
+      <button class="link on-desk" onClick=${flip}>${light ? 'Temno' : 'Svetlo'}</button>
+      <a class="link on-desk" href="/">Daljinec</a>
+      ${state.protected && html`<button class="quiet on-desk" onClick=${lock}>Zakleni</button>`}
+      <button class="on-phone more" onClick=${() => menu.current.showModal()}
+        title="Več">•••</button>
+    </header>
+
+    <main class="work">
+      <div class="shelf" ...${dropZone(importMarkdown)}>
+        <${PageList} ...${listProps} />
+      </div>
+
+      <div class="sheet" ...${dropZone((files) =>
+        files.some(isMarkdown) && !files.some(isImage)
+          ? importMarkdown(files) : insertImages(files))}>
+        <div class="sheet-head on-desk">
+          <span class="what">
+            ${editing == null
+              ? html`<span class="stencil">Ni izbrane strani</span>`
+              : html`<span class="n">${editing}</span>`}
+          </span>
+          <span class="grow"></span>
+          <button onClick=${renumber} disabled=${editing == null}
+            title="Številka je vrstni red">Preštevilči</button>
+          <button onClick=${show} disabled=${editing == null}>Prikaži</button>
+          <button class="primary" onClick=${save} disabled=${editing == null}>Shrani</button>
+          <button class="danger" onClick=${remove} disabled=${editing == null}>Izbriši</button>
+        </div>
+
+        <div class="tools">
+          ${tool(html`<b>B</b>`, 'Krepko (⌘B)', () => wrap('**'))}
+          ${tool(html`<i>I</i>`, 'Ležeče (⌘I)', () => wrap('*'))}
+          <span class="sep"></span>
+          ${tool('H1', 'Naslov', () => prefixLines('# '))}
+          ${tool('H2', 'Podnaslov', () => prefixLines('## '))}
+          ${tool('”', 'Zbor ali refren', () => prefixLines('> '))}
+          ${tool('•', 'Seznam', () => prefixLines('- '))}
+          <span class="sep"></span>
+          ${tool('Kitica', 'Prelom kitice', verseBreak)}
+          ${tool('Slika', 'Vstavi sliko', () => imagePicker.current.click())}
+          <span class="grow"></span>
+          <button
+            class=${previewing ? 'on' : ''}
+            title="Predogled (⌘P)"
+            onClick=${() => setPreviewing(!previewing)}
+          >Predogled</button>
+        </div>
+
+        ${previewing
+          ? html`<div class="preview" dangerouslySetInnerHTML=${{ __html: previewHtml(source) }}></div>`
+          : html`<textarea
+              ref=${area} spellcheck="false" value=${source}
+              placeholder=${'# Naslov pesmi\n\nPrva kitica ...'}
+              onInput=${(e) => { setSource(e.target.value); setDirty(true); say('Neshranjeno …'); }}
+            ></textarea>`}
+
+        <p class=${'say on-desk' + (note.bad ? ' bad' : '')}>${note.text}</p>
+
+        <div class="phone-bar on-phone">
+          <button onClick=${openChooser}>Strani</button>
+          <span class=${'say grow' + (note.bad ? ' bad' : '')}>${note.text}</span>
+          <button class="primary" onClick=${save} disabled=${editing == null}>Shrani</button>
+        </div>
+      </div>
+    </main>
+
+    ${dragging && html`<div class="drophint">
+      Markdown spusti levo na seznam · sliko spusti desno v besedilo
+    </div>`}
+
+    <input ref=${imagePicker} type="file" accept="image/*" multiple hidden
+      onChange=${async (e) => { await insertImages(Array.from(e.target.files)); e.target.value = ''; }} />
+    <input ref=${bundlePicker} type="file" hidden
+      accept=".tar,.gz,.tgz,application/x-tar,application/gzip"
+      onChange=${async (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (file) await install(file);
+      }} />
+
+    <dialog class="menu" ref=${menu}>
+      <h2>Stran ${editing == null ? '—' : editing}</h2>
+      <button onClick=${() => act(show)} disabled=${editing == null}>Prikaži na zaslonu</button>
+      <button onClick=${() => act(renumber)} disabled=${editing == null}
+        title="Številka je vrstni red">Preštevilči</button>
+      <button class="danger" onClick=${() => act(remove)} disabled=${editing == null}>Izbriši stran</button>
+      <hr />
+      <button onClick=${() => act(openSettings)}>Nastavitve zaslona</button>
+      <button onClick=${() => { flip(); menu.current.close(); }}>
+        ${light ? 'Temna barvna shema' : 'Svetla barvna shema'}
+      </button>
+      <a class="row-link" href="/">Nazaj na daljinec</a>
+      ${state.protected && html`<button onClick=${() => act(lock)}>Zakleni urejanje</button>`}
+      <span class="stencil">${version(state.update)}</span>
+      <menu><button class="primary" onClick=${() => menu.current.close()}>Zapri</button></menu>
+    </dialog>
+
+    <dialog class="finder" ref=${chooser}>
+      <${PageList} ...${listProps} />
+      <menu><button onClick=${() => chooser.current.close()}>Zapri</button></menu>
+    </dialog>
+
+    <dialog ref=${settings}>
+      <h2>Nastavitve zaslona</h2>
+      <label class="field">
+        <span class="stencil">Barve</span>
+        <select value=${s.theme || 'dark'} onChange=${(e) => putSettings({ theme: e.target.value })}>
+          <option value="dark">belo na črnem</option>
+          <option value="light">črno na belem</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="stencil">Pisava</span>
+        <select value=${s.font || 'inter'} onChange=${(e) => putSettings({ font: e.target.value })}>
+          ${(state.fonts || []).map((f) => html`<option value=${f.id}>${f.label}</option>`)}
+        </select>
+      </label>
+      <label class="field">
+        <span class="stencil">Povečava</span>
+        <input type="number" min="0.4" max="4" step="0.05" value=${s.baseScale ?? 1}
+          onChange=${(e) => putSettings({ baseScale: Number(e.target.value) })} />
+      </label>
+      <label class="field">
+        <span class="stencil">Zasuk</span>
+        <select value=${String(s.rotation ?? 0)} onChange=${(e) => putRotation(e.target.value)}>
+          ${[0, 90, 180, 270].map((d) => html`<option value=${String(d)}>${d}°</option>`)}
+        </select>
+      </label>
+      <label class="field inline">
+        <input type="checkbox" checked=${s.showTitle !== false}
+          onChange=${(e) => putSettings({ showTitle: e.target.checked })} />
+        <span>Naslovi na zaslonu</span>
+      </label>
+
+      <p class="warn">
+        Zasuk znova zažene zaslon. Posodobitev zamenja program, ki ga naprava
+        poganja — če se nova različica ne zažene, se naprava sama vrne na to.
+      </p>
+      <menu>
+        <button onClick=${() => bundlePicker.current.click()}>Posodobi program</button>
+        <button class="primary" onClick=${() => settings.current.close()}>Zapri</button>
+      </menu>
+    </dialog>`;
+}
+
+render(html`<${Manage} />`, document.getElementById('app'));
