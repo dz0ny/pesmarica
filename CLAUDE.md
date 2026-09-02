@@ -187,9 +187,9 @@ not a third place to look: the KMS driver ignores it.
 
 **Read-only `/etc` breaks anything that expects to write there.**
 `system.etc.overlay.mutable = false` is why `services.openssh.hostKeys` points
-at `/var/lib/ssh` and why `register-nix-paths` has its script overridden -- both
-upstream units write into `/etc` and fail, and the sshd one costs you ssh, which
-is the recovery path. A new unit that wants to write to `/etc` will fail the
+at `/var/lib/ssh` and why `register-nix-paths` is disabled outright (along with
+`nix` itself, which the box never runs) -- both upstream units write into
+`/etc` and fail, and the sshd one costs you ssh, which is the recovery path. A new unit that wants to write to `/etc` will fail the
 same way, silently, until someone reads the boot log.
 
 **The access point is the only way into the box, and the app no longer touches

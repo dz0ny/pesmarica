@@ -510,21 +510,15 @@ in
   };
   users.users.root.initialPassword = "pesmarica";
 
-  # Same read-only /etc, upstream's own unit: it registers the store paths (on
-  # /nix, writable) and then touches /etc/NIXOS, which cannot work here, so the
-  # unit fails before it clears /nix-path-registration and retries every boot.
-  # The tag is for nixos-rebuild, which an appliance whose system comes from a
-  # flashed image never runs; the registration itself is worth keeping.
-  systemd.services.register-nix-paths.script =
-    let
-      inherit (config.sdImage) nixPathRegistrationFile;
-      nix = config.nix.package.out;
-    in
-    lib.mkForce ''
-      ${lib.getExe' nix "nix-store"} --load-db < ${nixPathRegistrationFile}
-      ${lib.getExe' nix "nix-env"} -p /nix/var/nix/profiles/system --set /run/current-system
-      rm -f ${nixPathRegistrationFile}
-    '';
+  # No nix on the box at all: the system comes from a flashed image and the
+  # store is never queried, so the daemon, the database and the tools are
+  # weight on the card and a few seconds of every boot. Upstream's
+  # register-nix-paths would load that database on the first boot and then
+  # touch /etc/NIXOS, which the read-only /etc refuses -- so the unit failed,
+  # never cleared its trigger, and retried every boot. With no database to
+  # fill there is nothing left for it to do.
+  nix.enable = false;
+  systemd.services.register-nix-paths.enable = lib.mkForce false;
 
   # pam_lastlog2 seeds its database from /var/log/lastlog, which on this box is
   # a fresh tmpfs every boot with no such file in it, so the import unit fails.
@@ -540,7 +534,6 @@ in
   # screen or the web interface.
   environment.defaultPackages = lib.mkForce [ ];
   programs.command-not-found.enable = false;
-  nix.channel.enable = false;
   # Flutter carries its own text stack and the fonts are inside the bundle, so
   # nothing on this box asks fontconfig anything.
   fonts.fontconfig.enable = lib.mkForce false;
