@@ -239,7 +239,16 @@ a working `/dev/dri/card0`. The mesa behind it is overridden down to
 in 591 MB of LLVM -- a third of the closure -- for a software rasteriser this
 box can never use. That override is why mesa builds from source in CI instead
 of coming from the cache, and adding a driver back means paying that build
-again.
+again. Dropping drivers costs two workarounds: `gallium-va` has to
+be disabled by hand, because nixpkgs' meson hook sets `auto_features=enabled`
+and the VA-API tracker then demands a driver that is gone; and mesa's
+`spirv2dxil` output has to be created empty, because it declares that output
+unconditionally while only the WSL driver fills it.
+
+**`environment.defaultPackages` is empty, so anything the deploy scripts need
+must be asked for.** Emptying it took rsync with it, and both `deploy_pi.sh`
+and `deploy_system.sh` push over ssh with rsync -- a box without it can only
+be updated with a card reader. `environment.systemPackages` puts it back.
 
 **Getting into a box that is on no network.** Take `wifi.conf` off the boot
 partition so it comes up as the access point, join `Pesmarica`, then ssh to its

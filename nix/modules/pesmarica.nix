@@ -412,6 +412,14 @@ in
     vulkanDrivers = [ ];
   }).overrideAttrs (old: {
     mesonFlags = old.mesonFlags ++ [ (lib.mesonEnable "gallium-va" false) ];
+    # mesa declares a spirv2dxil output unconditionally, but the library only
+    # exists when the d3d12 driver is built -- and d3d12 drives a GPU that
+    # exists inside WSL. With it gone, moveToOutput finds nothing, the output
+    # path is never created, and nix fails the derivation for an empty output
+    # rather than for anything being wrong. An empty directory satisfies it.
+    postInstall = old.postInstall + ''
+      mkdir -p "$spirv2dxil"
+    '';
   });
 
   hardware.firmware = [
@@ -624,6 +632,10 @@ in
   # screen or the web interface.
   environment.defaultPackages = lib.mkForce [ ];
   programs.command-not-found.enable = false;
+  # Except rsync, which emptying defaultPackages took away with the rest -- and
+  # both deploy scripts push over ssh with it, so without this the box is only
+  # updatable by pulling the card. It is a megabyte and a half.
+  environment.systemPackages = [ pkgs.rsync ];
   # Flutter carries its own text stack and the fonts are inside the bundle, so
   # nothing on this box asks fontconfig anything.
   fonts.fontconfig.enable = lib.mkForce false;
