@@ -101,47 +101,35 @@ and `../tool/test_launcher.sh` exercises the launcher's half of it without a Pi.
 in `nix/` changes, the whole system has to go across:
 
 ```bash
-make system                                  # -> out/firmware
-HOST=root@192.168.4.1 ../tool/deploy_system.sh
+HOST=root@192.168.4.1 RELEASE=v7 ../tool/deploy_system.sh   # from a release
+make system SLOT=b && HOST=... ../tool/deploy_system.sh       # built here
 ```
 
-Expect minutes, not seconds: it is a few hundred megabytes over the box's own
-2.4 GHz access point onto an SD card. Only `nixos/default/` is replaced. The
-Pi's own firmware and `config.txt` are left alone -- they have no second copy
-to fall back to and change about once a year -- and the script says so when
-they have drifted from the build.
+Expect minutes, not seconds: half a gigabyte over the box's own 2.4 GHz access
+point onto an SD card.
 
-The system is one directory and `config.txt`'s `os_prefix` names it, so an
-update is a second directory written beside the live one and then two renames.
-An interrupted transfer touches nothing that boots, and the running system
-holds its squashfs by an open loop fd, so it does not notice the directory
-move out from under it. `../tool/system_swap.sh` is that half, and
-`../tool/test_system_swap.sh` covers it without a Pi.
+The boot partition has two slots, `nixos-a` and `nixos-b`, and a system is
+built for one of them (`pesmarica.slot`): its fstab names its own `rootfs.img`
+by that path, and `config.txt`'s `os_prefix` names the slot the firmware boots.
+The deploy asks the box which slot it runs, fills the other, and moves
+`os_prefix` — one line in a plain file, written to a temp name and renamed.
+Nothing the running system has open is touched. A release carries a payload
+for each slot; the card image ships slot `a`. `../tool/system_switch.sh` is
+the on-box half, and `../tool/test_system_switch.sh` covers it without a Pi.
 
-The partition holds two systems, not three, so the deploy drops the previous
-`nixos/default.old` before it starts rather than after it finishes -- during a
-transfer the fallback is the system that is still running, which nothing
-touches until the swap.
+The reboot goes through sysrq rather than a clean shutdown: the store is a loop
+device on a file on the boot partition, and the kernel does not come back from
+being asked to tear that down — twice, the box sat at "failed unmounting" until
+the plug was pulled. Root is a tmpfs and the store is read-only; a sync first
+is everything a clean shutdown would have done.
 
-Deploying needs an authorized key on the box, and root's home is a tmpfs, so a
-key copied there is gone after the reboot the deploy itself does. Keys belong
-at `/var/lib/pesmarica/.ssh/authorized_keys` -- on the songbook partition,
-beside the host key, where a card reader can also put one:
+There is no automatic rollback — the Pi firmware picks the kernel before
+anything of ours runs, and the Zero 2 W has no `tryboot` to borrow. The
+previous system stays whole in its slot. If the new one does not come up, the
+way back is a card reader and one line of `config.txt`:
 
-```bash
-ssh-copy-id -o PreferredAuthentications=password -o PubkeyAuthentication=no root@pesmarica.local
-ssh root@pesmarica.local 'mkdir -p /var/lib/pesmarica/.ssh &&
-  cat /root/.ssh/authorized_keys >> /var/lib/pesmarica/.ssh/authorized_keys'
 ```
-
-There is no automatic rollback: the Pi firmware picks the kernel before
-anything of ours runs, and the Zero 2 W has no `tryboot`-capable bootloader to
-borrow. What there is instead is the previous system, kept whole on the card at
-`nixos/default.old`. If the new one does not come up, the way back is a card
-reader and two renames on any laptop:
-
-```bash
-rm -rf FIRMWARE/nixos/default && mv FIRMWARE/nixos/default.old FIRMWARE/nixos/default
+os_prefix=nixos-a/default/      # or b: whichever it was running before
 ```
 
 ## Writes to the card
@@ -154,15 +142,15 @@ What is left is the songbook, written when a human edits a page, and
 `hostapd.conf` when someone changes the network.
 
 The card is two FAT32 partitions and nothing else. `FIRMWARE` holds the Pi
-firmware, `config.txt`, and `nixos/default/` with the kernel, the initrd,
+firmware, `config.txt`, and `nixos-<slot>/default/` with the kernel, the initrd,
 `cmdline.txt`, the device trees and `rootfs.img` -- the whole system as one
 zstd squashfs. There is no U-Boot: the firmware loads the kernel and initrd
 itself, and the initrd mounts the partition, loop-mounts `rootfs.img` as
 `/nix/store`, and gives the system a tmpfs for root. It is the shape of the
 NixOS netboot image with the squashfs on the card instead of inside the
 initrd, because the closure does not fit in a Zero 2 W's RAM. Updating the
-system is replacing the files in `nixos/default/` -- with a card reader, or
-over ssh with `deploy_system.sh` above.
+system is filling the other slot and moving `os_prefix` -- with a card reader,
+or over ssh with `deploy_system.sh` above.
 
 `PESMARICA` is the songbook -- FAT32, 512 MiB in the image, with the pages and
 `hostapd.conf` already written into it by `mtools` at build time -- and

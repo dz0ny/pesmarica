@@ -1,7 +1,7 @@
 # The card image: two FAT32 partitions and nothing else.
 #
-#   1  FIRMWARE   the Pi firmware, config.txt, and nixos/default/ with the
-#                 kernel, the initrd, cmdline.txt, the device trees and
+#   1  FIRMWARE   the Pi firmware, config.txt, and nixos-<slot>/default/ with
+#                 the kernel, the initrd, cmdline.txt, the device trees and
 #                 rootfs.img -- the whole system as one squashfs. Also where
 #                 wifi.conf and display.conf go.
 #   2  PESMARICA  the songbook, grown to the rest of the card on the box.
@@ -9,10 +9,13 @@
 # There is no root partition. The initrd mounts FIRMWARE, loop-mounts
 # rootfs.img as /nix/store, and root itself is a tmpfs -- the shape of the
 # NixOS netboot image, with the squashfs on the card instead of inside the
-# initrd, because the closure does not fit in a Zero 2 W's RAM. Updating the
-# system is replacing the files in nixos/default/ -- with a card reader, or
-# over ssh with tool/deploy_system.sh, which writes the new directory beside
-# the live one and swaps the names.
+# initrd, because the closure does not fit in a Zero 2 W's RAM.
+#
+# There are two slots, nixos-a and nixos-b, and which one a system lives in
+# is baked into it at build time: the fstab names its own rootfs.img by that
+# path, and os_prefix in config.txt names the slot the firmware boots. An
+# update writes the other slot and moves os_prefix -- nothing the running
+# system has open is touched. The card ships slot a.
 #
 # Both partitions are populated with mtools, so this runs unprivileged: no
 # loop devices, no mounting, and the same recipe for the songbook as before.
@@ -37,13 +40,19 @@ let
   firmware = pkgs.runCommand "pesmarica-firmware" { } ''
     mkdir -p $out
     ${config.boot.loader.raspberry-pi.firmwarePopulateCmd} -c ${toplevel} -f $out
-    cp ${rootfs} $out/nixos/default/rootfs.img
+    cp ${rootfs} $out/${config.boot.loader.raspberry-pi.nixosGenerationsDir}/default/rootfs.img
   '';
 
   songbookMiB = 512;
   songbookClusterSectors = 8; # 4 KiB clusters: a sane FAT once this fills a card.
 in
 {
+  options.pesmarica.slot = lib.mkOption {
+    type = lib.types.enum [ "a" "b" ];
+    default = "a";
+    description = "Which of the two boot-partition slots this system is built for.";
+  };
+
   options.pesmarica.image = {
     compress = lib.mkOption {
       type = lib.types.bool;
