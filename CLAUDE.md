@@ -126,16 +126,29 @@ the launcher in the image reads `rotation` out of `settings.json` and passes
 Validate it at both ends — a panel showing a corner of the songbook looks like a
 dead box, and the way back is ssh.
 
-**The songbook partition is FAT32, and it ships in the image.** The card can be
-pulled and the pages edited on any laptop -- that is the point -- and FAT32 is
-what makes it possible to put the songbook *into* the image, because `mtools`
-populates it offline and `fatresize` grows it on the first boot. exFAT can do
-neither, which is why it is no longer exFAT. It carries no permissions (they
-come from the mount, `umask=0077`) so nothing may `chmod` there, and no journal,
-so a power cut mid-write can cost more than the file being written. Anything
-added to `sdImage.postBuildCommands` runs unprivileged in the image build: no
-loop devices, no mounting, so a file goes onto that partition through `mcopy`
-and nothing else.
+**The card is two FAT32 partitions, and the system is a file on the first.**
+`nix/modules/image.nix` builds it: `FIRMWARE` holds the Pi firmware,
+`config.txt` and `nixos/default/` with the kernel, initrd, `cmdline.txt`, the
+device trees and `rootfs.img`, a zstd squashfs of the whole closure that the
+initrd loop-mounts as `/nix/store`; root is a tmpfs. No U-Boot, no ext4, no
+generations. Updating the system is replacing the files in `nixos/default/`.
+`PESMARICA` is the songbook, and the one place anything persists: the ssh
+host key lives in `.ssh/` there. The card can be pulled and the pages edited
+on any laptop -- that is the point -- and FAT32 is what makes it possible to
+ship both partitions populated: `mtools` writes them offline and `fatresize`
+grows the songbook on the first boot, with no marker, from what the card
+itself says. exFAT can do neither. FAT carries no permissions (they come from
+the mount, `umask=0077`) so nothing may `chmod` there, and no journal, so a
+power cut mid-write can cost more than the file being written. The image
+build runs unprivileged: no loop devices, no mounting, so a file goes onto a
+partition through `mcopy` and nothing else.
+
+**The squashfs device is named by its initrd path.** `fileSystems."/nix/.ro-store"`
+points at `/sysroot/boot/firmware/...` because that is where the boot
+partition sits while the initrd runs, and systemd orders the loop mount after
+it from the path alone. The same line is in the final `/etc/fstab`, already
+mounted; do not "fix" it to `/boot/firmware/...` or the initrd stops finding
+it.
 
 **The web UI lives in `assets/web/`, not in Dart.** It is served through
 `rootBundle`, so any change there needs a restart to show up, and a new file
@@ -187,7 +200,7 @@ not a third place to look: the KMS driver ignores it.
 
 **Read-only `/etc` breaks anything that expects to write there.**
 `system.etc.overlay.mutable = false` is why `services.openssh.hostKeys` points
-at `/var/lib/ssh` and why `register-nix-paths` is disabled outright (along with
+at the songbook partition and why `register-nix-paths` is disabled outright (along with
 `nix` itself, which the box never runs) -- both upstream units write into
 `/etc` and fail, and the sshd one costs you ssh, which is the recovery path. A
 new unit that wants to write to `/etc` will fail the same way, silently, until

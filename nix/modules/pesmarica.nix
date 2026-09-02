@@ -370,6 +370,16 @@ in
   # of regulatory.db at boot and falls back to the world regulatory domain,
   # which quietly ignores the country_code hostapd is started with. It is a few
   # kilobytes, and it is what makes the AP legal on the channel it picks.
+  # No U-Boot. The Pi firmware loads a kernel and an initramfs itself, given
+  # kernel= and initramfs lines in config.txt; U-Boot only earned its place
+  # with an extlinux menu of generations to choose from, and this box has
+  # exactly one, flashed from the image. "kernel" is upstream's generational
+  # direct-kernel loader: one folder under /boot/firmware/nixos per system,
+  # holding kernel.img, initrd, cmdline.txt and the device trees, with
+  # config.txt pointing at it through os_prefix -- which is also the shape a
+  # second slot and the firmware's tryboot would want, later.
+  boot.loader.raspberry-pi.bootloader = "kernel";
+
   # /run/opengl-driver. flutter-pi links libgbm and libEGL, and since mesa 25
   # both are thin front ends that find the actual driver -- dri_gbm.so and the
   # EGL vendor file -- through this path and nowhere else. Without it flutter-pi
@@ -455,8 +465,8 @@ in
   # Nothing dials out, so there is no clock to sync and nobody to sync with.
   services.timesyncd.enable = false;
 
-  # The base profile brings ZFS in. On a box with 512 MB of RAM, one ext4 root
-  # and two FAT partitions it is closure weight and a boot-time warning.
+  # ZFS comes in by default. On a box with 512 MB of RAM, a squashfs and two
+  # FAT partitions it is closure weight and a boot-time warning.
   boot.supportedFilesystems.zfs = lib.mkForce false;
 
   # The SD card is the part that dies. Everything that writes continuously is
@@ -472,24 +482,43 @@ in
   };
   boot.tmp.useTmpfs = true;
 
-  # noatime alone removes a write for every page the display reads. commit=600
-  # lets ext4 batch ten minutes of metadata instead of flushing every five
-  # seconds -- the box is a screen on a wall, and a power cut costs at most the
-  # view counter, which is the one thing here nobody would notice losing.
-  fileSystems."/".options = [ "noatime" "nodiratime" "commit=600" ];
-
-  # systemd's own state is disposable on an appliance: a fresh random seed and
-  # an empty lease file every boot cost nothing and keep the card idle.
-  fileSystems."/var/lib/systemd" = {
+  # The system is rootfs.img on the boot partition: one squashfs holding the
+  # closure, which the initrd loop-mounts as /nix/store. Root is a tmpfs, so
+  # nothing on the card is ever written by the system itself -- the logs,
+  # systemd's state, /var, all of it goes with the power. The only things
+  # that persist are the two FAT partitions, and both of those a laptop can
+  # read. See modules/image.nix for how the card is laid out.
+  fileSystems."/" = {
     device = "tmpfs";
     fsType = "tmpfs";
-    options = [ "mode=0755" "size=8M" ];
+    options = [ "mode=0755" "noatime" ];
   };
-  fileSystems."/var/log" = {
-    device = "tmpfs";
-    fsType = "tmpfs";
-    options = [ "mode=0755" "size=8M" ];
+  fileSystems."/boot/firmware" = {
+    device = "/dev/disk/by-label/FIRMWARE";
+    fsType = "vfat";
+    neededForBoot = true;
+    # umask: wifi.conf on this partition carries a passphrase.
+    options = [ "noatime" "umask=0077" "x-systemd.device-timeout=30s" ];
   };
+  # The device is named by its path *in the initrd*, where the boot partition
+  # sits under /sysroot -- and systemd orders this after that mount from the
+  # path alone. The same line lands in the final /etc/fstab, where it is
+  # already mounted and never looked at again.
+  fileSystems."/nix/.ro-store" = {
+    device = "/sysroot/boot/firmware/nixos/default/rootfs.img";
+    fsType = "squashfs";
+    options = [ "loop" "threads=multi" ];
+    neededForBoot = true;
+  };
+  fileSystems."/nix/store" = {
+    device = "/nix/.ro-store";
+    fsType = "none";
+    options = [ "bind" ];
+    neededForBoot = true;
+  };
+  boot.initrd.supportedFilesystems = { vfat = true; squashfs = true; };
+  boot.initrd.kernelModules = [ "loop" ];
+  boot.supportedFilesystems = { vfat = true; squashfs = true; };
 
   # NixOS activation rewrites the whole of /etc on every boot, which is the
   # largest thing still touching the card once the logs are in RAM. Mounting
@@ -525,15 +554,22 @@ in
     settings.PermitRootLogin = "yes";
     # /etc is a read-only overlay of the store, so sshd-keygen cannot write the
     # host key where it normally does and the unit fails -- taking ssh, the only
-    # way into a box whose screen is broken, with it. The keys live on the root
-    # filesystem instead, written once on the first boot. One ed25519 key, not
-    # also a 4096-bit RSA one: this generates on a Zero 2 W, at boot.
+    # way into a box whose screen is broken, with it. With root in RAM the
+    # only place a key can outlive a boot is the songbook partition, so it
+    # lives there, in a dotfile the laptops will not show. One ed25519 key,
+    # not also a 4096-bit RSA one: this generates on a Zero 2 W, at boot.
     hostKeys = [
       {
-        path = "/var/lib/ssh/ssh_host_ed25519_key";
+        path = "/var/lib/pesmarica/.ssh/ssh_host_ed25519_key";
         type = "ed25519";
       }
     ];
+  };
+  # Wants, not Requires: a card with no songbook partition still gets an
+  # sshd, with a key that lasts one boot.
+  systemd.services.sshd = {
+    after = [ "var-lib-pesmarica.mount" ];
+    wants = [ "var-lib-pesmarica.mount" ];
   };
   users.users.root.initialPassword = "pesmarica";
 
@@ -774,84 +810,16 @@ in
   # The 4 GB per-file ceiling is not a limit anything here can reach: the pages
   # are markdown and the pictures are photographs of hymn sheets.
 
-  # The root partition is not grown -- the rest of the card belongs to the
-  # songbook, which pesmarica-data below grows into on the first boot.
-  sdImage.expandOnBoot = false;
-
-  # Big enough that mkfs makes a FAT32 rather than quietly falling back to
-  # FAT16 (which needs upwards of 65525 clusters), small enough not to matter
-  # in an image that is mostly zeroes and compresses away to nothing.
-  sdImage.postBuildCommands =
-    let
-      megabytes = 512;
-      clusterSectors = 8; # 4 KiB clusters: a sane FAT once this fills a card.
-    in
-    ''
-      # The songbook partition, appended to the image rather than created on the
-      # first boot. Same recipe as /boot/firmware above, because it is the same
-      # kind of filesystem and the same tools are already here.
-      # A megabyte more than the partition needs, because the start below is
-      # rounded up to the next 1 MiB boundary and the root partition does not
-      # end on one.
-      truncate -s +${toString (megabytes + 1)}M $img
-
-      # The start has to be given. Left to itself, --append puts the partition
-      # in the *first* free area, which on this layout is the 7 MiB gap in
-      # front of /boot/firmware, not the space just added at the end -- and it
-      # does so silently, or fails with "no free sectors available" if a size
-      # was named that will not fit there. So: start right after the root
-      # partition, aligned, and take everything from there to the end.
-      # type=c is W95 FAT32 (LBA), which is what a laptop expects.
-      eval $(partx $img -o START,SECTORS --nr 2 --pairs)
-      songbookStart=$(( ((START + SECTORS + 2047) / 2048) * 2048 ))
-      songbookSectors=$(( $(stat -c %s $img) / 512 - songbookStart ))
-      sfdisk --no-reread --no-tell-kernel --append $img <<EOF
-          start=$songbookStart, size=$songbookSectors, type=c
-      EOF
-
-      eval $(partx $img -o START,SECTORS --nr 3 --pairs)
-      # Belt and braces, because the failure above was silent: a partition in
-      # the wrong hole is small, and a small FAT32 is one mkfs warns about and
-      # some systems read as FAT16. Better a build that stops than a card that
-      # holds seven megabytes of songbook.
-      [ "$SECTORS" -ge ${toString ((megabytes - 16) * 2048)} ] || {
-        echo "pesmarica: songbook partition came out $((SECTORS / 2048)) MiB, expected ${toString megabytes}" >&2
-        exit 1
-      }
-      truncate -s $((SECTORS * 512)) songbook_part.img
-      mkfs.vfat --invariant -i 50534d43 -F 32 -s ${toString clusterSectors} \
-        -n PESMARICA songbook_part.img
-
-      mkdir songbook
-      cp -r ${content}/. songbook/
-      # The access point config ships here too, so the name and passphrase of
-      # the network the box hands out can be changed with the card in a laptop
-      # and before it is ever powered on. systemd-tmpfiles puts it back if it
-      # goes missing.
-      cp ${defaultHostapdConf} songbook/hostapd.conf
-      chmod -R u+w songbook
-      find songbook -exec touch --date=2000-01-01 {} +
-
-      cd songbook
-      for d in $(find . -type d -mindepth 1 | sort); do
-        faketime "2000-01-01 00:00:00" mmd -i ../songbook_part.img "::/$d"
-      done
-      for f in $(find . -type f | sort); do
-        mcopy -pvm -i ../songbook_part.img "$f" "::/$f"
-      done
-      cd ..
-
-      fsck.vfat -vn songbook_part.img
-      dd conv=notrunc if=songbook_part.img of=$img seek=$START count=$SECTORS
-    '';
+  # How the image is built is modules/image.nix; what it ships is set here.
+  pesmarica.image = {
+    inherit content;
+    hostapdConf = defaultHostapdConf;
+  };
 
   systemd.services.pesmarica-data = {
     description = "Grow the songbook partition into the rest of the card";
     wantedBy = [ "local-fs.target" ];
     before = [ "var-lib-pesmarica.mount" ];
-    # The image's partition ends well short of any card worth flashing it to.
-    # Once it does not, this has nothing left to do and stops running.
-    unitConfig.ConditionPathExists = "!/var/lib/.pesmarica-grown";
     path = [
       pkgs.util-linux
       pkgs.parted
@@ -863,37 +831,46 @@ in
       Type = "oneshot";
       RemainAfterExit = true;
     };
+    # Nothing here may fail the unit: the mount below requires it, and a card
+    # that cannot be grown still holds the songbook the image put on it. No
+    # marker either, now that nothing outlives a boot -- the card itself says
+    # whether there is work: a partition that stops short of the disk, or a
+    # filesystem that stops short of its partition, which is what a power cut
+    # during the first boot leaves behind.
     script = ''
-      # Whatever happens here, it happens once: a card that cannot be grown
-      # still holds the songbook the image put on it, and a box that retried
-      # this on every boot would be repartitioning itself in a parish hall.
-      touch /var/lib/.pesmarica-grown
-
       part=$(readlink -f /dev/disk/by-label/PESMARICA) || exit 0
       [ -b "$part" ] || { echo "pesmarica: no songbook partition to grow" >&2; exit 0; }
+      name=$(basename "$part")
       disk=/dev/$(lsblk --noheadings --output PKNAME "$part" | head -1)
-      number=$(cat "/sys/class/block/$(basename "$part")/partition")
+      number=$(cat "/sys/class/block/$name/partition")
+      start=$(cat "/sys/class/block/$name/start")
+      size=$(cat "/sys/class/block/$name/size")
+      disksize=$(blockdev --getsz "$disk")
 
-      echo ",+," | sfdisk -N"$number" --no-reread "$disk"
-      partprobe "$disk" || true
-      udevadm settle
+      # More than 8 MiB of card after the partition: take it.
+      if [ $(( disksize - start - size )) -gt 16384 ]; then
+        if echo ",+," | sfdisk -N"$number" --no-reread "$disk"; then
+          partprobe "$disk" || true
+          udevadm settle
+          size=$(cat "/sys/class/block/$name/size")
+        else
+          echo "pesmarica: could not grow the songbook partition" >&2
+        fi
+      fi
 
-      # fatresize will not touch a filesystem that has not been checked, and
-      # the check is worth having anyway on a card that was pulled out of a
-      # laptop mid-copy.
-      fsck.fat -a "$part" || true
-      fatresize -s max "$part"
-      udevadm settle
+      # FAT32 keeps its size in the boot sector: total sectors, 4 bytes at 32.
+      fssize=$(od -An -t u4 -j 32 -N 4 "$part" | tr -d ' ')
+      if [ $(( size - fssize )) -gt 2048 ]; then
+        # fatresize will not touch a filesystem that has not been checked,
+        # and the check is worth having anyway on a card that was pulled out
+        # of a laptop mid-copy.
+        fsck.fat -a "$part" || true
+        fatresize -s max "$part" \
+          || echo "pesmarica: fatresize failed, the songbook stays at $(( fssize / 2048 )) MiB" >&2
+        udevadm settle
+      fi
     '';
   };
-
-  # Upstream mounts the boot partition on demand and lets it go after a minute
-  # idle. Units above hold it through RequiresMountsFor, and systemd stops a
-  # unit whose required mount goes away -- so a minute after boot the app was
-  # stopped, quietly, and never restarted, because a stop is not a failure.
-  # Mount it once and keep it: nothing on this box needs the card to be idle.
-  # mkOverride below mkForce, because upstream's own definition is a mkForce.
-  fileSystems."/boot/firmware".options = lib.mkOverride 40 [ "nofail" "noatime" ];
 
   fileSystems."/var/lib/pesmarica" = {
     device = "/dev/disk/by-label/PESMARICA";
