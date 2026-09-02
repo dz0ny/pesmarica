@@ -126,16 +126,37 @@ the launcher in the image reads `rotation` out of `settings.json` and passes
 Validate it at both ends — a panel showing a corner of the songbook looks like a
 dead box, and the way back is ssh.
 
-**The songbook partition is FAT32, and it ships in the image.** The card can be
-pulled and the pages edited on any laptop -- that is the point -- and FAT32 is
-what makes it possible to put the songbook *into* the image, because `mtools`
-populates it offline and `fatresize` grows it on the first boot. exFAT can do
-neither, which is why it is no longer exFAT. It carries no permissions (they
-come from the mount, `umask=0077`) so nothing may `chmod` there, and no journal,
-so a power cut mid-write can cost more than the file being written. Anything
-added to `sdImage.postBuildCommands` runs unprivileged in the image build: no
-loop devices, no mounting, so a file goes onto that partition through `mcopy`
-and nothing else.
+**The card is two FAT32 partitions, and the system is a file on the first.**
+`nix/modules/image.nix` builds it: `FIRMWARE` holds the Pi firmware,
+`config.txt` and `nixos/default/` with the kernel, initrd, `cmdline.txt`, the
+device trees and `rootfs.img`, a zstd squashfs of the whole closure that the
+initrd loop-mounts as `/nix/store`; root is a tmpfs. No U-Boot, no ext4, no
+generations. Updating the system is replacing the files in `nixos/default/`
+— `tool/deploy_system.sh` does it over ssh, writing the new directory beside
+the live one and swapping the names. Which is why the live directory's *name*
+may never change: `fileSystems."/nix/.ro-store"` bakes that path into every
+system it builds, so one staged under any other name boots its own kernel
+against the previous squashfs — quietly, and it will even come up. There is no
+automatic rollback either — the firmware picks the kernel before anything of
+ours runs, and a Zero 2 W has no `tryboot` to borrow — so the previous system
+is kept whole at `nixos/default.old` and the way back is a card reader.
+`PESMARICA` is the songbook, and the one place anything persists: the ssh
+host key lives in `.ssh/` there. The card can be pulled and the pages edited
+on any laptop -- that is the point -- and FAT32 is what makes it possible to
+ship both partitions populated: `mtools` writes them offline and `fatresize`
+grows the songbook on the first boot, with no marker, from what the card
+itself says. exFAT can do neither. FAT carries no permissions (they come from
+the mount, `umask=0077`) so nothing may `chmod` there, and no journal, so a
+power cut mid-write can cost more than the file being written. The image
+build runs unprivileged: no loop devices, no mounting, so a file goes onto a
+partition through `mcopy` and nothing else.
+
+**The squashfs device is named by its initrd path.** `fileSystems."/nix/.ro-store"`
+points at `/sysroot/boot/firmware/...` because that is where the boot
+partition sits while the initrd runs, and systemd orders the loop mount after
+it from the path alone. The same line is in the final `/etc/fstab`, already
+mounted; do not "fix" it to `/boot/firmware/...` or the initrd stops finding
+it.
 
 **The web UI lives in `assets/web/`, not in Dart.** It is served through
 `rootBundle`, so any change there needs a restart to show up, and a new file
@@ -187,7 +208,7 @@ not a third place to look: the KMS driver ignores it.
 
 **Read-only `/etc` breaks anything that expects to write there.**
 `system.etc.overlay.mutable = false` is why `services.openssh.hostKeys` points
-at `/var/lib/ssh` and why `register-nix-paths` is disabled outright (along with
+at the songbook partition and why `register-nix-paths` is disabled outright (along with
 `nix` itself, which the box never runs) -- both upstream units write into
 `/etc` and fail, and the sshd one costs you ssh, which is the recovery path. A
 new unit that wants to write to `/etc` will fail the same way, silently, until
@@ -213,7 +234,21 @@ keep them so.
 `libgbm` and `libEGL`, which since mesa 25 are front ends that find `dri_gbm.so`
 and the EGL vendor file through that path alone. `hardware.graphics.enable` is
 what creates it; without it flutter-pi reports "Could not create GBM device" on
-a working `/dev/dri/card0`.
+a working `/dev/dri/card0`. The mesa behind it is overridden down to
+`v3d` and `vc4` with no Vulkan drivers, because stock mesa's `llvmpipe` pulls
+in 591 MB of LLVM -- a third of the closure -- for a software rasteriser this
+box can never use. That override is why mesa builds from source in CI instead
+of coming from the cache, and adding a driver back means paying that build
+again. Dropping drivers costs two workarounds: `gallium-va` has to
+be disabled by hand, because nixpkgs' meson hook sets `auto_features=enabled`
+and the VA-API tracker then demands a driver that is gone; and mesa's
+`spirv2dxil` output has to be created empty, because it declares that output
+unconditionally while only the WSL driver fills it.
+
+**`environment.defaultPackages` is empty, so anything the deploy scripts need
+must be asked for.** Emptying it took rsync with it, and both `deploy_pi.sh`
+and `deploy_system.sh` push over ssh with rsync -- a box without it can only
+be updated with a card reader. `environment.systemPackages` puts it back.
 
 **Getting into a box that is on no network.** Take `wifi.conf` off the boot
 partition so it comes up as the access point, join `Pesmarica`, then ssh to its
@@ -265,7 +300,11 @@ a stale size.
 `nix/` is a NixOS flake and the single definition of the system: the units, the
 access point, the partitions, the paths. `tool/deploy_pi.sh` only pushes a build
 onto a box that already runs the image — if you find yourself wanting to install
-a unit from the repo, change the image instead.
+a unit from the repo, change the image instead. When the image itself is what
+changed, `tool/deploy_system.sh` pushes the boot partition (`make system`, or
+`nix build .#firmware`) onto a running box rather than reflashing a card. It
+replaces `nixos/default/` and nothing else, so a change to the Pi firmware or
+`config.txt` still needs a reflash; the script says so when it sees one.
 
 It builds on [nixos-raspberrypi](https://github.com/nvmd/nixos-raspberrypi),
 chosen over raspberry-pi-nix because its cache actually holds the kernel: check
@@ -302,6 +341,9 @@ over a temp songbook — fast, and where most logic belongs.
 `test/render_test.dart` and `test/title_test.dart` are widget tests over a real
 `PresenterScreen`. `test/bundle_slots_test.dart` covers the update slots, and
 `tool/test_launcher.sh` covers the rollback side of them in shell.
+`tool/test_system_swap.sh` does the same for system updates: it runs
+`tool/system_swap.sh` against fake boot partitions, and every refusal it pins
+is a card reader trip that did not happen.
 `test/network_api_test.dart` pins what the web interface may write to the boot
 partition -- above all that a passphrase wpa_supplicant would refuse is refused
 while there is still somebody connected to be told about it.

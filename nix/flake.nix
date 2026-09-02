@@ -33,10 +33,12 @@
               # The Zero 2 W as its own target, rather than a Pi 4 config that
               # happens to boot on one.
               raspberry-pi-02.base
-              sd-image
+              # Not sd-image: that module is an ext4 root and U-Boot, and the
+              # card here is two FAT partitions with the system in a file.
             ];
           })
           ./modules/pesmarica.nix
+          ./modules/image.nix
         ] ++ extra;
       };
     in
@@ -47,13 +49,16 @@
         # The image the same, only left uncompressed. CI compresses it with xz
         # itself, and unpacking zstd only to repack it would be a few minutes of
         # a runner spent on nothing.
-        pesmarica-raw = appliance [ { sdImage.compressImage = false; } ];
+        pesmarica-raw = appliance [ { pesmarica.image.compress = false; } ];
       };
 
       packages.${system} = {
         default = self.nixosConfigurations.pesmarica.config.system.build.sdImage;
         sdImage = self.nixosConfigurations.pesmarica.config.system.build.sdImage;
         sdImageRaw = self.nixosConfigurations.pesmarica-raw.config.system.build.sdImage;
+        # The boot partition on its own: what tool/deploy_system.sh pushes onto
+        # a box that already runs the image, instead of reflashing a card.
+        firmware = self.nixosConfigurations.pesmarica.config.system.build.firmware;
         flutter-pi = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/flutter-pi.nix { };
       };
     };

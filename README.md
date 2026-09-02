@@ -99,8 +99,8 @@ runtime. Unplugging the box is a supported way to turn it off.
 
 ## Install
 
-The `image` workflow builds the card image and attaches it to the run as an
-`.img.xz` artifact, so the usual way to get one is to download it from
+The `image` workflow builds the card image and attaches it to the run, so the
+usual way to get one is to download it from
 [Actions](https://github.com/dz0ny/pesmarica/actions) and write it to a card:
 
 ```bash
@@ -108,8 +108,12 @@ diskutil unmountDisk /dev/rdisk4
 ```
 
 ```bash
-xz -dc pesmarica-*.img.xz | sudo dd of=/dev/rdisk4 bs=4m status=progress
+zstd -dc pesmarica-*.img.zst | sudo dd of=/dev/rdisk4 bs=4m status=progress
 ```
+
+A published release carries the same image as `.img.xz` instead -- that one is
+downloaded for years, so it is worth the minutes of compression a dispatched
+build is not. Swap `zstd -dc` for `xz -dc` and the rest is the same.
 
 Note the `r` in `rdisk4`: the raw device is several times faster. `make flash`
 does the same three steps -- unmount, write, eject -- for an image you built
@@ -136,8 +140,21 @@ HOST=root@pesmarica.local ./tool/deploy_pi.sh
 
 That syncs the songbook to `/var/lib/pesmarica` (without `--delete`, so pages
 created through the web interface survive) and the app into whichever update
-slot is not running, then restarts onto it. It installs nothing: changing the
-system means rebuilding the image.
+slot is not running, then restarts onto it. It installs nothing.
+
+When the system itself is what changed -- the kernel, a unit, anything in
+`nix/` -- there is a heavier sibling that saves the trip for the card reader:
+
+```bash
+cd nix && make system
+HOST=root@pesmarica.local ../tool/deploy_system.sh
+```
+
+It writes the new system beside the live one on the boot partition and swaps
+the names, keeping the previous one at `nixos/default.old`. Expect minutes, not
+seconds -- it is the whole closure over the box's own access point -- and note
+that it does not replace the Pi's own firmware or `config.txt`, which still
+want a reflash on the rare occasion they change.
 
 ### Updates are A/B
 

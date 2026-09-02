@@ -146,23 +146,57 @@ jobs:
 
           # cachix-action pushes what the build produced when it is configured.
 
+      # Where the image's weight actually is. The toplevel is already built as
+      # a dependency of the image, so this is seconds, and it is the only way
+      # to tell which of mesa, the kernel's modules and the rest of the closure
+      # is worth attacking -- the compressed image is ~600 MiB of closure and
+      # ~1.5 GiB of zeroes, so nothing but the closure moves the number.
+      - name: Closure
+        working-directory: nix
+        # pipefail because the interesting command is not the last one in the
+        # pipeline: without it a broken `nix path-info` exits 1, numfmt exits 0,
+        # and the step passes having printed nothing. `head` goes last for the
+        # same reason -- closing the pipe early would SIGPIPE sort and fail the
+        # step for no reason.
+        run: |
+          set -euo pipefail
+          nix build "path:$PWD#nixosConfigurations.pesmarica.config.system.build.toplevel" \
+            --out-link sys
+          echo "closure: $(nix path-info -Sh ./sys | awk '{print $2}')"
+          nix path-info -rS ./sys | sort -k2 -nr | numfmt --to=iec --field=2 > closure.txt
+          head -25 closure.txt
+
+      # The image is ~2 GiB, of which ~600 MiB is the closure's squashfs and the
+      # rest is zeroes. The zeroes are the whole job, and they collapse at any
+      # level -- the squashfs is already zstd, so turning the dial up only
+      # grinds at data that will not give. Measured on one build: xz -9 took
+      # 2m43s for 631 MiB, zstd seconds for 643 MiB. Two percent.
+      #
+      # So a release gets xz, because that file is public and every tool can
+      # open it, but at -1: the zeroes go either way and nobody should wait
+      # minutes for the rest. Everything else gets zstd, which is what
+      # nix/Makefile's `make flash` already expects to unpack.
       - name: Compress
         working-directory: nix
+        env:
+          RELEASE: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') }}
         run: |
           img="$(find -L result -name '*.img' | head -1)"
           [ -n "$img" ] || { echo "no .img under result/"; ls -R result; exit 1; }
           mkdir -p ../out
           name="pesmarica-$(date -u +%Y%m%d)-${GITHUB_SHA::7}.img"
-          # -T0 to use the whole runner; the image is mostly zeroes and packs well.
-          xz -9 -T0 -c "$img" > "../out/$name.xz"
-          ls -lh "../out/$name.xz"
-          sha256sum "../out/$name.xz" > "../out/$name.xz.sha256"
+          if [ "$RELEASE" = true ]; then
+            out="$name.xz"; xz -1 -T0 -c "$img" > "../out/$out"
+          else
+            out="$name.zst"; zstd -T0 -12 -c "$img" > "../out/$out"
+          fi
+          cd ../out && ls -lh "$out" && sha256sum "$out" > "$out.sha256"
 
       - uses: actions/upload-artifact@v7
         with:
           name: sd-image
           path: out/*
-          # Already xz; the artifact zip would only add a layer of nothing.
+          # Already compressed; the artifact zip would only add a layer of nothing.
           compression-level: 0
           retention-days: 14
 
