@@ -56,3 +56,6 @@ nix/bundle/
 nix/content/
 nix/out/
 nix/.docker/
+
+# Per-machine Claude Code permissions; launch.json beside it is shared.
+.claude/settings.local.json

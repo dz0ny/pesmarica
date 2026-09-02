@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pesmarica",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "PESMARICA_CONTENT=\"$PWD/content\" exec flutter run -d macos"
+      ],
+      "port": 8080
+    }
+  ]
+}
