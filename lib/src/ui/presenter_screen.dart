@@ -54,82 +54,88 @@ class _PresenterScreenState extends State<PresenterScreen> {
     // A page opts in or out on its own; otherwise the songbook default wins.
     final showTitle = page?.showTitle ?? settings.showTitle;
 
-    return Focus(
-      focusNode: _focus,
-      autofocus: true,
-      onKeyEvent: (_, event) => _keys.handle(event),
-      child: GestureDetector(
-        // Touch panels and USB "air mouse" remotes are common on signage
-        // hardware; a tap on the right half advances, like the arrow keys.
-        behavior: HitTestBehavior.opaque,
-        onTapUp: (details) {
-          final width = MediaQuery.sizeOf(context).width;
-          details.globalPosition.dx > width / 2
-              ? presenter.next()
-              : presenter.previous();
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          color: palette.background,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              if (page == null)
-                EmptyState(
-                  font: font,
-                  palette: palette,
-                  contentRoot: presenter.songbook.root.path,
-                  adminUrl: widget.adminUrl,
-                )
-              else
-                Column(
-                  children: <Widget>[
-                    Expanded(
-                      child: SongPageView(
-                        key: ValueKey<String>(page.path),
-                        page: page,
-                        font: font,
-                        palette: palette,
-                        scale: presenter.effectiveScale,
-                        contentRoot: presenter.songbook.root.path,
-                        showTitle: showTitle,
+    // Nothing here is a Scaffold, and text outside a Material inherits the
+    // framework's error style: a yellow double underline under every line.
+    // A transparent Material draws nothing and supplies a plain default.
+    return Material(
+      type: MaterialType.transparency,
+      child: Focus(
+        focusNode: _focus,
+        autofocus: true,
+        onKeyEvent: (_, event) => _keys.handle(event),
+        child: GestureDetector(
+          // Touch panels and USB "air mouse" remotes are common on signage
+          // hardware; a tap on the right half advances, like the arrow keys.
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) {
+            final width = MediaQuery.sizeOf(context).width;
+            details.globalPosition.dx > width / 2
+                ? presenter.next()
+                : presenter.previous();
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            color: palette.background,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                if (page == null)
+                  EmptyState(
+                    font: font,
+                    palette: palette,
+                    contentRoot: presenter.songbook.root.path,
+                    adminUrl: widget.adminUrl,
+                  )
+                else
+                  Column(
+                    children: <Widget>[
+                      Expanded(
+                        child: SongPageView(
+                          key: ValueKey<String>(page.path),
+                          page: page,
+                          font: font,
+                          palette: palette,
+                          scale: presenter.effectiveScale,
+                          contentRoot: presenter.songbook.root.path,
+                          showTitle: showTitle,
+                        ),
                       ),
-                    ),
-                    if (settings.showChrome)
-                      ChromeBar(
-                        font: font,
-                        palette: palette,
-                        number: page.number,
-                        title: showTitle ? page.title : '',
-                        position: presenter.index + 1,
-                        total: presenter.pages.length,
-                      ),
-                  ],
-                ),
-              if (presenter.numberBuffer.isNotEmpty)
-                NumberEntryOverlay(
-                  digits: presenter.numberBuffer,
-                  font: font,
-                  palette: palette,
-                ),
-              if (presenter.flash != null)
-                FlashOverlay(
-                  message: presenter.flash!,
-                  font: font,
-                  palette: palette,
-                ),
-              if (presenter.helpVisible)
-                HelpOverlay(
-                  font: font,
-                  palette: palette,
-                  adminUrl: widget.adminUrl,
-                ),
-              if (presenter.songbook.error != null)
-                _ErrorBanner(
-                  message: presenter.songbook.error!,
-                  palette: palette,
-                ),
-            ],
+                      if (settings.showChrome)
+                        ChromeBar(
+                          font: font,
+                          palette: palette,
+                          number: page.number,
+                          title: showTitle ? page.title : '',
+                          position: presenter.index + 1,
+                          total: presenter.pages.length,
+                        ),
+                    ],
+                  ),
+                if (presenter.numberBuffer.isNotEmpty)
+                  NumberEntryOverlay(
+                    digits: presenter.numberBuffer,
+                    font: font,
+                    palette: palette,
+                  ),
+                if (presenter.flash != null)
+                  FlashOverlay(
+                    message: presenter.flash!,
+                    font: font,
+                    palette: palette,
+                  ),
+                if (presenter.helpVisible)
+                  HelpOverlay(
+                    font: font,
+                    palette: palette,
+                    adminUrl: widget.adminUrl,
+                  ),
+                if (presenter.songbook.error != null)
+                  _ErrorBanner(
+                    message: presenter.songbook.error!,
+                    palette: palette,
+                  ),
+              ],
+            ),
           ),
         ),
       ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../model/settings.dart';
@@ -5,7 +7,7 @@ import 'page_style.dart';
 
 /// The bottom strip: page number, title, total. Deliberately quiet — it is
 /// wayfinding for the room, not part of the content.
-class ChromeBar extends StatelessWidget {
+class ChromeBar extends StatefulWidget {
   const ChromeBar({
     super.key,
     required this.font,
@@ -23,13 +25,56 @@ class ChromeBar extends StatelessWidget {
   final int position;
   final int total;
 
+  /// How long "3 / 4" stays up after a page change. Long enough for the
+  /// operator to see where they are, short enough not to sit in front of the
+  /// room for the whole song.
+  static const Duration positionLinger = Duration(seconds: 3);
+
+  @override
+  State<ChromeBar> createState() => _ChromeBarState();
+}
+
+class _ChromeBarState extends State<ChromeBar> {
+  bool _showPosition = true;
+  Timer? _linger;
+
+  @override
+  void initState() {
+    super.initState();
+    _restart();
+  }
+
+  @override
+  void didUpdateWidget(ChromeBar old) {
+    super.didUpdateWidget(old);
+    if (widget.position != old.position || widget.total != old.total) {
+      _restart();
+    }
+  }
+
+  void _restart() {
+    _linger?.cancel();
+    _showPosition = true;
+    // Cancelled in dispose, because a timer outliving the tree fails the
+    // widget tests and leaks on a screen that runs for months.
+    _linger = Timer(ChromeBar.positionLinger, () {
+      if (mounted) setState(() => _showPosition = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _linger?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = (MediaQuery.sizeOf(context).height / 45).clamp(11.0, 34.0);
     final style = fontStyle(
-      font: font,
+      font: widget.font,
       size: size,
-      color: palette.muted,
+      color: widget.palette.muted,
       height: 1.0,
     );
 
@@ -41,19 +86,29 @@ class ChromeBar extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Text(
-            '$number',
+            '${widget.number}',
             style: style.copyWith(
-              color: palette.foreground,
+              color: widget.palette.foreground,
               fontWeight: FontWeight.w700,
               fontVariations: const <FontVariation>[FontVariation('wght', 700)],
             ),
           ),
           SizedBox(width: size * 0.8),
           Expanded(
-            child: Text(title, style: style, overflow: TextOverflow.ellipsis),
+            child: Text(
+              widget.title,
+              style: style,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
           SizedBox(width: size * 0.8),
-          Text('$position / $total', style: style),
+          // Kept in the tree rather than removed, so the title never reflows
+          // sideways when the count goes away.
+          AnimatedOpacity(
+            opacity: _showPosition ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 450),
+            child: Text('${widget.position} / ${widget.total}', style: style),
+          ),
         ],
       ),
     );

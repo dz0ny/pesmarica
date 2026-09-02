@@ -8,6 +8,7 @@ import 'package:pesmarica/src/data/songbook.dart';
 import 'package:pesmarica/src/model/settings.dart';
 import 'package:pesmarica/src/ui/page_style.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:pesmarica/src/ui/overlays.dart';
 import 'package:pesmarica/src/ui/page_view.dart';
 import 'package:pesmarica/src/ui/presenter_screen.dart';
 
@@ -57,13 +58,49 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('no text inherits the framework error underline', (tester) async {
+    await show(tester);
+    presenter.next();
+    await tester.pump(const Duration(milliseconds: 400));
+    // Outside a Material every Text gets the yellow double underline; the
+    // chrome bar is where it showed.
+    final style = DefaultTextStyle.of(tester.element(find.text('2 / 2'))).style;
+    expect(style.decoration, isNot(TextDecoration.underline));
+  });
+
+  double positionOpacity(WidgetTester tester) => tester
+      .widget<AnimatedOpacity>(
+        find.ancestor(
+          of: find.textContaining(' / '),
+          matching: find.byType(AnimatedOpacity),
+        ),
+      )
+      .opacity;
+
+  testWidgets('the position count goes away and comes back', (tester) async {
+    await show(tester);
+    expect(positionOpacity(tester), 1.0);
+
+    await tester.pump(ChromeBar.positionLinger);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(positionOpacity(tester), 0.0);
+
+    presenter.next();
+    await tester.pump();
+    expect(positionOpacity(tester), 1.0);
+    await tester.pump(ChromeBar.positionLinger);
+    await tester.pump(const Duration(milliseconds: 500));
+  });
+
   double bodyFontSize(WidgetTester tester) {
     expect(find.byType(SongPageView), findsOneWidget);
     final body = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
     return body.styleSheet!.p!.fontSize!;
   }
 
-  testWidgets('a long page is shrunk to fit rather than clipped', (tester) async {
+  testWidgets('a long page is shrunk to fit rather than clipped', (
+    tester,
+  ) async {
     await show(tester);
     final short = bodyFontSize(tester);
 
@@ -81,16 +118,24 @@ void main() {
   testWidgets('flipping polarity swaps the two colours', (tester) async {
     await show(tester);
     expect(presenter.settings.theme, PageTheme.dark);
-    expect(PagePalette.of(presenter.settings.theme).background, PagePalette.dark.background);
+    expect(
+      PagePalette.of(presenter.settings.theme).background,
+      PagePalette.dark.background,
+    );
 
     // toggleTheme writes settings.json; real file I/O has to run outside the
     // fake async zone or the await never completes.
     await tester.runAsync(presenter.toggleTheme);
     await tester.pump();
-    expect(PagePalette.of(presenter.settings.theme).background, PagePalette.light.background);
+    expect(
+      PagePalette.of(presenter.settings.theme).background,
+      PagePalette.light.background,
+    );
   });
 
-  testWidgets('the empty songbook explains itself instead of going black', (tester) async {
+  testWidgets('the empty songbook explains itself instead of going black', (
+    tester,
+  ) async {
     for (final file in root.listSync().whereType<File>()) {
       if (file.path.endsWith('.md')) file.deleteSync();
     }
