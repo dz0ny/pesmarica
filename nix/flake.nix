@@ -45,6 +45,9 @@
     {
       nixosConfigurations = {
         pesmarica = appliance [ ];
+        # The same system built for the other slot. A deploy pushes whichever
+        # one the box is not running.
+        pesmarica-b = appliance [ { pesmarica.slot = "b"; } ];
 
         # The image the same, only left uncompressed. CI compresses it with xz
         # itself, and unpacking zstd only to repack it would be a few minutes of
@@ -56,9 +59,10 @@
         default = self.nixosConfigurations.pesmarica.config.system.build.sdImage;
         sdImage = self.nixosConfigurations.pesmarica.config.system.build.sdImage;
         sdImageRaw = self.nixosConfigurations.pesmarica-raw.config.system.build.sdImage;
-        # The boot partition on its own: what tool/deploy_system.sh pushes onto
-        # a box that already runs the image, instead of reflashing a card.
-        firmware = self.nixosConfigurations.pesmarica.config.system.build.firmware;
+        # The boot partition on its own, per slot: what tool/deploy_system.sh
+        # pushes onto a box that already runs the image, instead of reflashing.
+        firmware-a = self.nixosConfigurations.pesmarica.config.system.build.firmware;
+        firmware-b = self.nixosConfigurations.pesmarica-b.config.system.build.firmware;
         flutter-pi = nixpkgs.legacyPackages.${system}.callPackage ./pkgs/flutter-pi.nix { };
       };
     };

@@ -379,6 +379,21 @@ in
   # config.txt pointing at it through os_prefix -- which is also the shape a
   # second slot and the firmware's tryboot would want, later.
   boot.loader.raspberry-pi.bootloader = "kernel";
+  # The slot is the folder name, and it is baked into this system: os_prefix
+  # in config.txt, the tree the firmware populates, and the fstab line below
+  # all come from it. Building the other slot is one option away
+  # (pesmarica.slot = "b"), and a running box reports its own in
+  # /etc/pesmarica-slot so a deploy knows which one is free.
+  boot.loader.raspberry-pi.nixosGenerationsDir = "nixos-${config.pesmarica.slot}";
+  environment.etc."pesmarica-slot".text = config.pesmarica.slot + "\n";
+  # Reboot through sysrq. Asking the kernel to shut down cleanly means tearing
+  # down a loop device whose backing file is the store every process is
+  # executing from, and it does not come back from that -- the box sat at
+  # "failed unmounting" until somebody pulled the plug, twice. The deploy
+  # syncs and then writes b to sysrq-trigger, which restarts without the
+  # teardown. Root is a tmpfs and the store is read-only; the sync is for the
+  # two FAT partitions and is all a clean shutdown would have done for them.
+  boot.kernel.sysctl."kernel.sysrq" = 1;
 
   # The panel is the product, and a congregation should not watch it boot.
   # Upstream ships loglevel=7 with console=tty1, so every kernel message and
@@ -552,9 +567,10 @@ in
   # The device is named by its path *in the initrd*, where the boot partition
   # sits under /sysroot -- and systemd orders this after that mount from the
   # path alone. The same line lands in the final /etc/fstab, where it is
-  # already mounted and never looked at again.
+  # already mounted and never looked at again. The slot in the path is why a
+  # system can only ever boot from the slot it was built for.
   fileSystems."/nix/.ro-store" = {
-    device = "/sysroot/boot/firmware/nixos/default/rootfs.img";
+    device = "/sysroot/boot/firmware/${config.boot.loader.raspberry-pi.nixosGenerationsDir}/default/rootfs.img";
     fsType = "squashfs";
     options = [ "loop" "threads=multi" ];
     neededForBoot = true;

@@ -145,6 +145,14 @@ jobs:
             --extra-trusted-public-keys nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= \
             --out-link result
 
+          # Both slots as bare payloads, for tool/deploy_system.sh RELEASE=...:
+          # a box running slot a takes b and vice versa, so a release has to
+          # carry both. Slot a is already built as part of the image; b differs
+          # by one string and rebuilds only the parts that carry it.
+          for s in a b; do
+            nix build "path:$PWD#firmware-$s" --out-link "fw-$s"
+          done
+
           # cachix-action pushes what the build produced when it is configured.
 
       # Where the image's weight actually is. The toplevel is already built as
@@ -191,7 +199,10 @@ jobs:
           else
             out="$name.zst"; zstd -T0 -12 -c "$img" > "../out/$out"
           fi
-          cd ../out && ls -lh "$out" && sha256sum "$out" > "$out.sha256"
+          for s in a b; do
+            tar -C "fw-$s/nixos-$s" -cf - default | zstd -T0 -12 > "../out/pesmarica-system-$s-${GITHUB_SHA::7}.tar.zst"
+          done
+          cd ../out && ls -lh && for f in "$out" pesmarica-system-*.tar.zst; do sha256sum "$f" > "$f.sha256"; done
 
       - uses: actions/upload-artifact@v7
         with:

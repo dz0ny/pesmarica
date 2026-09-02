@@ -2,29 +2,31 @@
 # Replaces the *system* on an appliance that is already running the image,
 # over ssh, instead of pulling the card and reflashing it.
 #
-#   HOST=root@pesmarica.local ./tool/deploy_system.sh
+#   HOST=root@pesmarica.local ./tool/deploy_system.sh            # builds locally
+#   HOST=root@pesmarica.local RELEASE=v7 ./tool/deploy_system.sh # from a release
+#   HOST=... PAYLOAD=/path/to/firmware-b ./tool/deploy_system.sh # a tree you have
 #
 # This is the heavier sibling of deploy_pi.sh: that one pushes the Flutter
-# bundle between reflashes, this one pushes the kernel, the initrd and the
-# whole closure as one squashfs. Expect minutes, not seconds -- it is a few
-# hundred megabytes over the box's own 2.4 GHz access point onto an SD card.
-# If all you changed is Dart, use deploy_pi.sh.
+# bundle, this one the kernel, the initrd and the whole closure as one
+# squashfs. Expect minutes, not seconds -- it is half a gigabyte over the
+# box's own 2.4 GHz access point onto an SD card.
 #
-# The new system is written beside the live one and then swapped in by rename,
-# so an interrupted transfer touches nothing that boots. See tool/system_swap.sh
-# for that half, which is also what tool/test_system_swap.sh covers.
+# The boot partition has two slots, nixos-a and nixos-b, and a system is built
+# for one of them: its fstab names its own slot, and config.txt's os_prefix
+# names the slot the firmware boots. So the deploy asks the box which slot it
+# is running, fills the other, and moves os_prefix. Nothing the running system
+# has open is touched, and the previous system stays whole in its slot.
 #
 # There is no automatic rollback: the Pi firmware picks the kernel before
-# anything of ours runs. The previous system stays whole on the card, so if
-# the new one does not come up, the way back is a card reader and two renames
-# on any laptop:
+# anything of ours runs. If the new system does not come up, the way back is
+# a card reader and one line of config.txt:
 #
-#   rm -rf FIRMWARE/nixos/default && mv FIRMWARE/nixos/default.old FIRMWARE/nixos/default
+#   os_prefix=nixos-<the other letter>/default/
 #
-# Only nixos/default/ is replaced. The Pi's own firmware -- bootcode.bin,
-# start*.elf, fixup*.dat -- and config.txt are left alone: they have no second
-# copy to fall back to, and they change about once a year. The script says so
-# when they have drifted, and then a reflash is the honest answer.
+# Only the slot is written. The Pi's own firmware -- bootcode.bin, start*.elf,
+# fixup*.dat -- is left alone: it has no second copy to fall back to, and it
+# changes about once a year. The script says so when it has drifted, and then
+# a reflash is the honest answer.
 set -euo pipefail
 
 HOST="${HOST:?set HOST=root@pesmarica.local}"
@@ -33,87 +35,80 @@ FIRMWARE="${FIRMWARE:-/boot/firmware}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-# PAYLOAD lets you point at a tree you built yourself; otherwise build it the
-# way the image is built, inside colima, because this needs aarch64 Linux.
-PAYLOAD="${PAYLOAD:-}"
-if [ -z "$PAYLOAD" ]; then
-	make -C "$ROOT/nix" system
-	PAYLOAD="$ROOT/nix/out/firmware"
-fi
-SRC="$PAYLOAD/nixos/default"
-[ -d "$SRC" ] || { echo "!! $SRC is not there; is PAYLOAD a firmware tree?" >&2; exit 1; }
+# Which slot is free. The box says which it is running; the image ships a.
+RUNNING="$(ssh "$HOST" "cat /etc/pesmarica-slot 2>/dev/null | tr -d '[:space:]'" || true)"
+case "$RUNNING" in
+	a) SLOT=b ;;
+	b) SLOT=a ;;
+	*) echo "!! $HOST does not say which slot it runs; is it on an image with slots?" >&2; exit 1 ;;
+esac
 
-VERSION="$(git -C "$ROOT" describe --always --dirty 2>/dev/null || date +%Y-%m-%d)"
+# Where the payload comes from: a release, a tree you point at, or a build
+# in colima, in that order of preference -- the first two need no builder.
+PAYLOAD="${PAYLOAD:-}"
+if [ -n "${RELEASE:-}" ]; then
+	dl="$(mktemp -d)"; trap 'rm -rf "$dl"' EXIT
+	gh release download "$RELEASE" -p "pesmarica-system-$SLOT-*.tar.zst" -D "$dl"
+	mkdir -p "$dl/tree/nixos-$SLOT"
+	zstd -dc "$dl"/pesmarica-system-"$SLOT"-*.tar.zst | tar -C "$dl/tree/nixos-$SLOT" -xf -
+	PAYLOAD="$dl/tree"
+elif [ -z "$PAYLOAD" ]; then
+	make -C "$ROOT/nix" system SLOT="$SLOT"
+	PAYLOAD="$ROOT/nix/out/firmware-$SLOT"
+fi
+SRC="$PAYLOAD/nixos-$SLOT/default"
+[ -d "$SRC" ] || { echo "!! $SRC is not there; is PAYLOAD a slot-$SLOT firmware tree?" >&2; exit 1; }
+
+VERSION="${RELEASE:-$(git -C "$ROOT" describe --always --dirty 2>/dev/null || date +%Y-%m-%d)}"
 NEED_KB="$(du -sk "$SRC" | cut -f1)"
 
-echo "==> $HOST:$FIRMWARE/nixos/default.new ($VERSION, $(( NEED_KB / 1024 )) MiB)"
+echo "==> $HOST: slot $RUNNING running, writing $SLOT ($VERSION, $(( NEED_KB / 1024 )) MiB)"
 
-# The partition holds two systems, so the previous one goes now rather than
-# after the swap: otherwise the transfer would need room for three at once and
-# the second update onto any box would run the card out of space. Nothing is
-# lost by it -- the system that is *running* is the one to fall back to while
-# a new one is being written, and that one is not touched until the swap.
-# Check before spending ten minutes on a transfer that cannot land.
+# The partition is sized for two slots, so the one being replaced is emptied
+# first, and the check counts it as free. Nothing is lost by that: while a
+# new system is being written, the running one is the fallback, and it is in
+# the other slot. Check before spending ten minutes on a transfer that cannot
+# land.
 ssh "$HOST" "
 	set -e
 	free=\$(df -k $FIRMWARE | awk 'NR==2 {print \$4}')
-	reclaim=\$(du -sk $FIRMWARE/nixos/default.new $FIRMWARE/nixos/default.old 2>/dev/null | awk '{s+=\$1} END {print s+0}')
+	reclaim=\$(du -sk $FIRMWARE/nixos-$SLOT 2>/dev/null | awk '{s+=\$1} END {print s+0}')
 	if [ \$(( free + reclaim )) -lt $(( NEED_KB + 32768 )) ]; then
 		echo \"!! $FIRMWARE has \$(( (free + reclaim) / 1024 )) MiB free, needs $(( NEED_KB / 1024 + 32 ))\" >&2
 		exit 1
 	fi
-	rm -rf $FIRMWARE/nixos/default.new $FIRMWARE/nixos/default.old
+	rm -rf $FIRMWARE/nixos-$SLOT
+	mkdir -p $FIRMWARE/nixos-$SLOT/default
 "
 
-# tar, not rsync: rsync has to exist on the *box*, and on an appliance whose
-# environment.defaultPackages is empty it did not -- which made this script
-# unable to bootstrap itself onto any box flashed before rsync was added back.
-# tar is in the closure regardless. There is nothing for rsync's delta to save
-# here anyway: the staging directory was just deleted, so every byte goes over
-# either way.
-#
-# --no-same-owner/permissions: FAT carries neither, and they come from the
-# mount (umask=0077). tar would otherwise fail trying to set them.
-tar -C "$SRC" -cf - . | ssh "$HOST" "
-	mkdir -p $FIRMWARE/nixos/default.new
-	tar -C $FIRMWARE/nixos/default.new -xf - --no-same-owner --no-same-permissions
-"
+# tar, not rsync: rsync would have to exist on the box, and it does not. tar
+# is in the closure regardless. --no-same-owner/permissions: FAT carries
+# neither, they come from the mount, and tar would fail trying to set them.
+tar -C "$SRC" -cf - . | ssh "$HOST" "tar -C $FIRMWARE/nixos-$SLOT/default -xf - --no-same-owner --no-same-permissions"
 
-# The marker goes last, so a cut-short rsync leaves an unusable directory
-# rather than a plausible one. system_swap.sh refuses without it.
-ssh "$HOST" "printf '%s\n' '$VERSION' > $FIRMWARE/nixos/default.new/.complete"
+# The marker goes last, so a cut-short transfer leaves an unusable slot rather
+# than a plausible one. system_switch.sh refuses without it.
+ssh "$HOST" "printf '%s\n' '$VERSION' > $FIRMWARE/nixos-$SLOT/default/.complete"
 
 # Warn about the parts an ssh update cannot replace, rather than replacing
-# them: there is no second copy of these to fall back to.
+# them. Sorted: the two shells expand the globs in their own order. config.txt
+# is not compared -- its os_prefix legitimately differs by slot.
 onbox="$(mktemp)"; inbuild="$(mktemp)"
-trap 'rm -f "$onbox" "$inbuild"' EXIT
-# Sorted: the two shells expand the globs in their own order, and an unsorted
-# diff then reports every file as drifted when nothing has changed at all.
-ssh "$HOST" "cd $FIRMWARE && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null" \
-	| sort > "$onbox" || true
-(cd "$PAYLOAD" && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null) \
-	| sort > "$inbuild" || true
+ssh "$HOST" "cd $FIRMWARE && md5sum start*.elf fixup*.dat bootcode.bin 2>/dev/null" | sort > "$onbox" || true
+(cd "$PAYLOAD" && md5sum start*.elf fixup*.dat bootcode.bin 2>/dev/null) | sort > "$inbuild" || true
 if ! diff -q "$onbox" "$inbuild" >/dev/null; then
-	echo "!! the Pi firmware or config.txt differ from this build:"
+	echo "!! the Pi firmware differs from this build:"
 	diff "$onbox" "$inbuild" || true
-	echo "!! this update does not replace them -- reflash the card for those."
+	echo "!! this update does not replace it -- reflash the card for that."
 fi
+rm -f "$onbox" "$inbuild"
 
-ssh "$HOST" "FIRMWARE=$FIRMWARE bash -s" < "$HERE/system_swap.sh"
+ssh "$HOST" "FIRMWARE=$FIRMWARE bash -s $SLOT" < "$HERE/system_switch.sh"
 
 echo "==> rebooting $HOST"
-# sync, then reboot without asking systemd to tear anything down. A normal
-# shutdown hangs here: /nix/store is a loop device on a file that lives on
-# /boot/firmware, so systemd is told to unmount the filesystem every process
-# on the box is executing from -- and it was just renamed out from under the
-# loop as well. It retries instead of giving up, and the box sits there until
-# somebody pulls the power.
-#
-# Nothing is lost by skipping it. Root is a tmpfs, the store is read-only, and
-# the only writable things are the two FAT partitions, which sync flushes.
-# That is also why sync is separate and first: -ff is reboot(2), immediately,
-# and there is no second chance to write anything after it.
-#
-# The connection dies with the box, which is not a failure.
-ssh "$HOST" "sync" || true
-ssh "$HOST" "systemctl reboot -ff" || true
+# sync, then restart through sysrq. A clean shutdown tears down the loop
+# device the store lives on, and this box does not come back from that. Root
+# is a tmpfs and the store is read-only, so the sync is for the FAT partitions
+# and is everything a clean shutdown would have done for them. The connection
+# dies with the box, which is not a failure.
+ssh "$HOST" "sync; echo s > /proc/sysrq-trigger; sleep 1; echo b > /proc/sysrq-trigger" || true

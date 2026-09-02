@@ -146,15 +146,15 @@ When the system itself is what changed -- the kernel, a unit, anything in
 `nix/` -- there is a heavier sibling that saves the trip for the card reader:
 
 ```bash
-cd nix && make system
-HOST=root@pesmarica.local ../tool/deploy_system.sh
+HOST=root@pesmarica.local RELEASE=v7 ./tool/deploy_system.sh
 ```
 
-It writes the new system beside the live one on the boot partition and swaps
-the names, keeping the previous one at `nixos/default.old`. Expect minutes, not
-seconds -- it is the whole closure over the box's own access point -- and note
-that it does not replace the Pi's own firmware or `config.txt`, which still
-want a reflash on the rare occasion they change.
+The boot partition has two slots; the box says which it is running, the deploy
+fills the other from the release and points the firmware at it. The previous
+system stays whole in its slot. Expect minutes, not seconds -- it is the whole
+closure over the box's own access point -- and note that it does not replace
+the Pi's own firmware, which still wants a reflash on the rare occasion it
+changes.
 
 ### Updates are A/B
 
