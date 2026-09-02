@@ -87,8 +87,12 @@ ssh "$HOST" "printf '%s\n' '$VERSION' > $FIRMWARE/nixos/default.new/.complete"
 # them: there is no second copy of these to fall back to.
 onbox="$(mktemp)"; inbuild="$(mktemp)"
 trap 'rm -f "$onbox" "$inbuild"' EXIT
-ssh "$HOST" "cd $FIRMWARE && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null" > "$onbox" || true
-(cd "$PAYLOAD" && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null) > "$inbuild" || true
+# Sorted: the two shells expand the globs in their own order, and an unsorted
+# diff then reports every file as drifted when nothing has changed at all.
+ssh "$HOST" "cd $FIRMWARE && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null" \
+	| sort > "$onbox" || true
+(cd "$PAYLOAD" && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null) \
+	| sort > "$inbuild" || true
 if ! diff -q "$onbox" "$inbuild" >/dev/null; then
 	echo "!! the Pi firmware or config.txt differ from this build:"
 	diff "$onbox" "$inbuild" || true

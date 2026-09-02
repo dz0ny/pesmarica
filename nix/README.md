@@ -123,6 +123,17 @@ The partition holds two systems, not three, so the deploy drops the previous
 transfer the fallback is the system that is still running, which nothing
 touches until the swap.
 
+Deploying needs an authorized key on the box, and root's home is a tmpfs, so a
+key copied there is gone after the reboot the deploy itself does. Keys belong
+at `/var/lib/pesmarica/.ssh/authorized_keys` -- on the songbook partition,
+beside the host key, where a card reader can also put one:
+
+```bash
+ssh-copy-id -o PreferredAuthentications=password -o PubkeyAuthentication=no root@pesmarica.local
+ssh root@pesmarica.local 'mkdir -p /var/lib/pesmarica/.ssh &&
+  cat /root/.ssh/authorized_keys >> /var/lib/pesmarica/.ssh/authorized_keys'
+```
+
 There is no automatic rollback: the Pi firmware picks the kernel before
 anything of ours runs, and the Zero 2 W has no `tryboot`-capable bootloader to
 borrow. What there is instead is the previous system, kept whole on the card at

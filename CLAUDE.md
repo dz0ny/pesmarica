@@ -253,6 +253,13 @@ instead, which systemd pulls in regardless. Anything new that shells out on
 the box has the same constraint: check a running one before believing it is
 there.
 
+**Root's home is RAM, so an ssh key put there lasts one boot.** Authorized
+keys live at `/var/lib/pesmarica/.ssh/authorized_keys`, beside the host key and
+for the same reason -- and it matters more than it looks, because
+`deploy_system.sh` reboots the box itself, so a key in `/root/.ssh` would not
+survive the deploy that installed it. To authorize a new machine: append to
+that file over ssh within a boot, or put it there with a card reader.
+
 **Getting into a box that is on no network.** Take `wifi.conf` off the boot
 partition so it comes up as the access point, join `Pesmarica`, then ssh to its
 IPv6 link-local address (`ping6 ff02::1%<wifi if>` finds it) as `root` with the

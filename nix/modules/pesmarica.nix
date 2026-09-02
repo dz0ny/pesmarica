@@ -599,6 +599,20 @@ in
         type = "ed25519";
       }
     ];
+    # Authorized keys have the same problem as the host key, and it bites
+    # later: root's home is on the tmpfs, so a key copied there works until
+    # the next reboot and then is gone -- including the reboot that
+    # deploy_system.sh does at the end of its own run, which makes the ssh
+    # update path good for exactly one use. Beside the host key it survives,
+    # and because that partition is FAT32 a laptop with a card reader can
+    # authorize a machine on a box that is on no network.
+    #
+    # Appended, not forced: /root/.ssh still works for the length of a boot,
+    # which is how a key gets put here in the first place.
+    authorizedKeysFiles = [ "/var/lib/pesmarica/.ssh/authorized_keys" ];
+    # Every ssh connection otherwise spends about ninety seconds on a reverse
+    # lookup this box cannot answer, and a deploy makes several of them.
+    settings.UseDNS = false;
   };
   # Wants, not Requires: a card with no songbook partition still gets an
   # sshd, with a key that lasts one boot.
