@@ -784,7 +784,10 @@ in
       # type=c is W95 FAT32 (LBA), which is what a laptop expects.
       eval $(partx $img -o START,SECTORS --nr 2 --pairs)
       songbookStart=$(( ((START + SECTORS + 2047) / 2048) * 2048 ))
-      echo "start=$songbookStart,,c" | sfdisk --no-reread --no-tell-kernel --append $img
+      songbookSectors=$(( $(stat -c %s $img) / 512 - songbookStart ))
+      sfdisk --no-reread --no-tell-kernel --append $img <<EOF
+          start=$songbookStart, size=$songbookSectors, type=c
+      EOF
 
       eval $(partx $img -o START,SECTORS --nr 3 --pairs)
       # Belt and braces, because the failure above was silent: a partition in
