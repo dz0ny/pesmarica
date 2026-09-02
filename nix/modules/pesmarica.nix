@@ -402,10 +402,17 @@ in
   # The price is that mesa stops being a cache hit and builds from source on
   # every CI run. If that ever costs more than the megabytes are worth, the
   # way back is deleting this override.
-  hardware.graphics.package = pkgs.mesa.override {
+  #
+  # gallium-va has to go by hand: nixpkgs' meson hook sets auto_features=enabled,
+  # which force-enables the VA-API state tracker, and that one refuses to build
+  # without r600, radeonsi, nouveau, d3d12 or virgl among the drivers. Nothing
+  # here decodes video anyway.
+  hardware.graphics.package = (pkgs.mesa.override {
     galliumDrivers = [ "v3d" "vc4" ];
     vulkanDrivers = [ ];
-  };
+  }).overrideAttrs (old: {
+    mesonFlags = old.mesonFlags ++ [ (lib.mesonEnable "gallium-va" false) ];
+  });
 
   hardware.firmware = [
     pkgs.raspberrypiWirelessFirmware
