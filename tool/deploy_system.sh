@@ -65,13 +65,19 @@ ssh "$HOST" "
 	rm -rf $FIRMWARE/nixos/default.new $FIRMWARE/nixos/default.old
 "
 
-# --no-perms/owner/group and --omit-dir-times: FAT carries none of those, and
-# rsync fails loudly trying to set them. --delete because a payload is a set
-# of files that have to match each other, and a leftover from two versions ago
-# is exactly the kind of thing that works until it doesn't.
-rsync -rt --delete --omit-dir-times --no-perms --no-owner --no-group \
-	--info=progress2 \
-	"$SRC/" "$HOST:$FIRMWARE/nixos/default.new/"
+# tar, not rsync: rsync has to exist on the *box*, and on an appliance whose
+# environment.defaultPackages is empty it did not -- which made this script
+# unable to bootstrap itself onto any box flashed before rsync was added back.
+# tar is in the closure regardless. There is nothing for rsync's delta to save
+# here anyway: the staging directory was just deleted, so every byte goes over
+# either way.
+#
+# --no-same-owner/permissions: FAT carries neither, and they come from the
+# mount (umask=0077). tar would otherwise fail trying to set them.
+tar -C "$SRC" -cf - . | ssh "$HOST" "
+	mkdir -p $FIRMWARE/nixos/default.new
+	tar -C $FIRMWARE/nixos/default.new -xf - --no-same-owner --no-same-permissions
+"
 
 # The marker goes last, so a cut-short rsync leaves an unusable directory
 # rather than a plausible one. system_swap.sh refuses without it.
