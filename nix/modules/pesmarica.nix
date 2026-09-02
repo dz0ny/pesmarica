@@ -296,6 +296,10 @@ let
 
       [DHCPv4]
       UseNTP=no
+      # The machine id is made up at every boot (see environment.etc above),
+      # and so would be the DUID networkd derives from it; the MAC is what
+      # keeps this box on the same lease from one boot to the next.
+      ClientIdentifier=mac
       EOF
       # networkd reads its configuration as systemd-network, not as root, and
       # the umask above would leave this unreadable to it.
@@ -366,6 +370,13 @@ in
   # of regulatory.db at boot and falls back to the world regulatory domain,
   # which quietly ignores the country_code hostapd is started with. It is a few
   # kilobytes, and it is what makes the AP legal on the channel it picks.
+  # /run/opengl-driver. flutter-pi links libgbm and libEGL, and since mesa 25
+  # both are thin front ends that find the actual driver -- dri_gbm.so and the
+  # EGL vendor file -- through this path and nowhere else. Without it flutter-pi
+  # says "Could not create GBM device" on a perfectly good /dev/dri/card0 and
+  # the box boots to a console.
+  hardware.graphics.enable = true;
+
   hardware.firmware = [
     pkgs.raspberrypiWirelessFirmware
     pkgs.wireless-regdb
@@ -387,6 +398,12 @@ in
     address = [ "${apAddress}/24" ];
     networkConfig = {
       MulticastDNS = true;
+      # The box is the only router this link will ever have, so nothing to
+      # accept. With RA on, networkd also arms a DHCPv6 client on the link, and
+      # anything that client cannot set up takes the whole link to "failed"
+      # with the static address never applied -- which is how the missing
+      # machine-id above turned into an access point with no leases.
+      IPv6AcceptRA = false;
       # Handing out leases here rather than from dnsmasq keeps the two
       # responsibilities apart: networkd owns addresses, dnsmasq owns names.
       DHCPServer = true;
@@ -484,6 +501,16 @@ in
     enable = true;
     mutable = false;
   };
+  # systemd refuses to boot with no /etc/machine-id and no way to create one:
+  # "System cannot boot: Missing /etc/machine-id and /etc/ is read-only". It
+  # does not actually stop, it carries on with no id at all, and everything
+  # that asks for one fails in its own way -- dbus-broker exits with ENOENT, so
+  # every unit ordered after it waits its 90 seconds; networkd builds its DHCP
+  # identifiers from it, so wlan0 never gets an address and the access point
+  # hands out no leases. An empty file is the documented third way: systemd
+  # then makes an id up at boot and bind-mounts it over this one.
+  environment.etc."machine-id".text = "";
+
   # An immutable /etc means /etc/passwd and /etc/shadow come from the closure,
   # so accounts cannot be edited on the box -- useradd would have nowhere to
   # write. For an appliance with one account that is the point.
@@ -859,6 +886,14 @@ in
       udevadm settle
     '';
   };
+
+  # Upstream mounts the boot partition on demand and lets it go after a minute
+  # idle. Units above hold it through RequiresMountsFor, and systemd stops a
+  # unit whose required mount goes away -- so a minute after boot the app was
+  # stopped, quietly, and never restarted, because a stop is not a failure.
+  # Mount it once and keep it: nothing on this box needs the card to be idle.
+  # mkOverride below mkForce, because upstream's own definition is a mkForce.
+  fileSystems."/boot/firmware".options = lib.mkOverride 40 [ "nofail" "noatime" ];
 
   fileSystems."/var/lib/pesmarica" = {
     device = "/dev/disk/by-label/PESMARICA";

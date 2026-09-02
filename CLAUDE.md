@@ -189,8 +189,31 @@ not a third place to look: the KMS driver ignores it.
 `system.etc.overlay.mutable = false` is why `services.openssh.hostKeys` points
 at `/var/lib/ssh` and why `register-nix-paths` is disabled outright (along with
 `nix` itself, which the box never runs) -- both upstream units write into
-`/etc` and fail, and the sshd one costs you ssh, which is the recovery path. A new unit that wants to write to `/etc` will fail the
-same way, silently, until someone reads the boot log.
+`/etc` and fail, and the sshd one costs you ssh, which is the recovery path. A
+new unit that wants to write to `/etc` will fail the same way, silently, until
+someone reads the boot log. The same read-only `/etc` is why the image ships an
+empty `/etc/machine-id`: without one systemd logs "System cannot boot" and then
+boots anyway, with no id -- dbus-broker dies, everything after it waits 90
+seconds, and networkd cannot build DHCP identifiers, so wlan0 never gets its
+address and the access point hands out no leases.
+
+**`/boot/firmware` must stay mounted.** Upstream makes it an automount that
+lets go after a minute idle. Units that hold it through `RequiresMountsFor`
+-- the app among them -- get *stopped* when it goes, and a stop is not a
+failure, so `Restart=always` never fires: the box boots to a console one
+minute in. The module pins it as a plain mount; keep it that way.
+
+**GPU drivers only exist under `/run/opengl-driver`.** flutter-pi links
+`libgbm` and `libEGL`, which since mesa 25 are front ends that find `dri_gbm.so`
+and the EGL vendor file through that path alone. `hardware.graphics.enable` is
+what creates it; without it flutter-pi reports "Could not create GBM device" on
+a working `/dev/dri/card0`.
+
+**Getting into a box that is on no network.** Take `wifi.conf` off the boot
+partition so it comes up as the access point, join `Pesmarica`, then ssh to its
+IPv6 link-local address (`ping6 ff02::1%<wifi if>` finds it) as `root` with the
+image's initial password; a fresh image has no keys. Each login takes a minute
+and a half while sshd waits on a reverse lookup the box cannot do.
 
 **The access point is the only way into the box, and the app no longer touches
 it.** `hostapd.conf` lives on the data partition beside the songbook, which is
