@@ -87,8 +87,12 @@ ssh "$HOST" "printf '%s\n' '$VERSION' > $FIRMWARE/nixos/default.new/.complete"
 # them: there is no second copy of these to fall back to.
 onbox="$(mktemp)"; inbuild="$(mktemp)"
 trap 'rm -f "$onbox" "$inbuild"' EXIT
-ssh "$HOST" "cd $FIRMWARE && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null" > "$onbox" || true
-(cd "$PAYLOAD" && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null) > "$inbuild" || true
+# Sorted: the two shells expand the globs in their own order, and an unsorted
+# diff then reports every file as drifted when nothing has changed at all.
+ssh "$HOST" "cd $FIRMWARE && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null" \
+	| sort > "$onbox" || true
+(cd "$PAYLOAD" && md5sum config.txt start*.elf fixup*.dat bootcode.bin 2>/dev/null) \
+	| sort > "$inbuild" || true
 if ! diff -q "$onbox" "$inbuild" >/dev/null; then
 	echo "!! the Pi firmware or config.txt differ from this build:"
 	diff "$onbox" "$inbuild" || true
@@ -98,5 +102,18 @@ fi
 ssh "$HOST" "FIRMWARE=$FIRMWARE bash -s" < "$HERE/system_swap.sh"
 
 echo "==> rebooting $HOST"
+# sync, then reboot without asking systemd to tear anything down. A normal
+# shutdown hangs here: /nix/store is a loop device on a file that lives on
+# /boot/firmware, so systemd is told to unmount the filesystem every process
+# on the box is executing from -- and it was just renamed out from under the
+# loop as well. It retries instead of giving up, and the box sits there until
+# somebody pulls the power.
+#
+# Nothing is lost by skipping it. Root is a tmpfs, the store is read-only, and
+# the only writable things are the two FAT partitions, which sync flushes.
+# That is also why sync is separate and first: -ff is reboot(2), immediately,
+# and there is no second chance to write anything after it.
+#
 # The connection dies with the box, which is not a failure.
-ssh "$HOST" "systemctl reboot" || true
+ssh "$HOST" "sync" || true
+ssh "$HOST" "systemctl reboot -ff" || true

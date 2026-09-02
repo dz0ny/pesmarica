@@ -380,6 +380,20 @@ in
   # second slot and the firmware's tryboot would want, later.
   boot.loader.raspberry-pi.bootloader = "kernel";
 
+  # The panel is the product, and a congregation should not watch it boot.
+  # Upstream ships loglevel=7 with console=tty1, so every kernel message and
+  # every unit systemd starts scrolls across the screen until flutter-pi takes
+  # it. Errors still reach the serial console for anyone debugging with a
+  # cable; routine progress is gone from both. The screen stays black until
+  # the first frame -- a real splash image is its own piece of work.
+  boot.consoleLogLevel = lib.mkForce 3;
+  boot.initrd.verbose = false;
+  boot.kernelParams = [
+    "quiet"
+    "systemd.show_status=false"
+    "vt.global_cursor_default=0"
+  ];
+
   # /run/opengl-driver. flutter-pi links libgbm and libEGL, and since mesa 25
   # both are thin front ends that find the actual driver -- dri_gbm.so and the
   # EGL vendor file -- through this path and nowhere else. Without it flutter-pi
@@ -599,6 +613,20 @@ in
         type = "ed25519";
       }
     ];
+    # Authorized keys have the same problem as the host key, and it bites
+    # later: root's home is on the tmpfs, so a key copied there works until
+    # the next reboot and then is gone -- including the reboot that
+    # deploy_system.sh does at the end of its own run, which makes the ssh
+    # update path good for exactly one use. Beside the host key it survives,
+    # and because that partition is FAT32 a laptop with a card reader can
+    # authorize a machine on a box that is on no network.
+    #
+    # Appended, not forced: /root/.ssh still works for the length of a boot,
+    # which is how a key gets put here in the first place.
+    authorizedKeysFiles = [ "/var/lib/pesmarica/.ssh/authorized_keys" ];
+    # Every ssh connection otherwise spends about ninety seconds on a reverse
+    # lookup this box cannot answer, and a deploy makes several of them.
+    settings.UseDNS = false;
   };
   # Wants, not Requires: a card with no songbook partition still gets an
   # sshd, with a key that lasts one boot.
