@@ -304,7 +304,11 @@ in
   # holding kernel.img, initrd, cmdline.txt and the device trees, with
   # config.txt pointing at it through os_prefix -- which is also the shape a
   # second slot and the firmware's tryboot would want, later.
-  boot.loader.raspberry-pi.bootloader = "kernel";
+  # raspberry-pi-02.base sets this to "uboot" at normal priority, so a plain
+  # assignment here is one upstream bump away from a conflict. mkOverride 60
+  # rather than mkForce: it wins, and a consumer with a reason can still get
+  # past it.
+  boot.loader.raspberry-pi.bootloader = lib.mkOverride 60 "kernel";
   # The slot is the folder name, and it is baked into this system: os_prefix
   # in config.txt, the tree the firmware populates, and the fstab line below
   # all come from it. Building the other slot is one option away
@@ -488,7 +492,14 @@ in
     fsType = "vfat";
     neededForBoot = true;
     # umask: wifi.conf on this partition carries a passphrase.
-    options = [ "noatime" "umask=0077" "x-systemd.device-timeout=30s" ];
+    #
+    # mkForce because this option is a merging list: an upstream
+    # x-systemd.automount would be appended to ours rather than conflicting
+    # with it, and nothing would say so. That is the failure where the mount
+    # lets go after a minute idle, the units holding it are *stopped* rather
+    # than failed so Restart=always never fires, and the box is at a console
+    # one minute after boot. Pin it.
+    options = lib.mkForce [ "noatime" "umask=0077" "x-systemd.device-timeout=30s" ];
   };
   # The device is named by its path *in the initrd*, where the boot partition
   # sits under /sysroot -- and systemd orders this after that mount from the
