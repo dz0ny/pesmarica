@@ -249,9 +249,13 @@ before, since four pictures contained side by side are four pictures nobody can
 read. An image next to words is prose with a picture in it and is unaffected.
 
 Video is written the same way — `![](images/klip.mp4)` — and plays where the
-picture would be. A page that is one video loops it, muted; the box drives a
-screen in a room that has its own sound. Several sources on a page still belong
-to `slideshow`, so a video there plays once and lets the timer move on.
+picture would be. A page that is one video loops it. Several sources on a page
+still belong to `slideshow`, so a video there plays once and lets the timer
+move on.
+
+**There is no sound.** Not muted-by-default: the box carries no audio decoder,
+because the screen hangs in a room that has its own sound and the alternative
+was a couple of hundred megabytes of card for something nothing would play.
 
 Only H.264 in `.mp4`, `.m4v` or `.mov`. That is not fussiness: the Zero 2 W has
 a hardware H.264 decoder and nothing else it can keep up with, so a `.webm` or

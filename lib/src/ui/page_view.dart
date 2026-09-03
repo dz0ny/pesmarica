@@ -274,10 +274,12 @@ class _ImageStageState extends State<_ImageStage> {
 /// a slideshow safe: `AnimatedSwitcher` keys each item by index, so moving on
 /// disposes the pipeline rather than leaving it decoding behind a picture.
 ///
-/// Muted, deliberately. The box drives a screen in a room that has its own
-/// sound, and a hall does not want a video shouting at it when somebody pages
-/// past. It is also the safe default: with no audio sink configured, a
-/// pipeline that wants one can stall instead of playing silently.
+/// Silent, and not only by asking. The box drives a screen in a room that has
+/// its own sound, so the image is the whole of what a video is for here -- and
+/// the system is built to match: flutter-pi's pipeline ends at a video sink and
+/// the closure carries no audio decoder at all. Muting is what the widget can
+/// promise on a developer's machine, where there is a sink and there are
+/// decoders.
 class _VideoStage extends StatefulWidget {
   const _VideoStage({
     required this.file,

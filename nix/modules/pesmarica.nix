@@ -19,17 +19,39 @@ let
 
   apAddress = "192.168.4.1";
 
-  # What gstreamer loads at runtime, as against what flutter-pi links: core and
-  # base for playbin and the pipeline itself, good for the mp4 demuxer and the
-  # v4l2 decoder that is the Pi's own H.264 block, bad for the H.264 parser,
-  # and libav for the AAC an mp4 usually carries. The audio is muted on the
-  # display side, but playbin still has to be able to decode the stream it
-  # finds: a missing decoder fails the whole pipeline, not just its sound.
+  # The three plugins this box actually loads, lifted out of two packages that
+  # would otherwise come whole. flutter-pi's pipeline is
+  #
+  #   uridecodebin ! video/x-raw ! appsink
+  #
+  # so what it needs beyond core and base is the mp4 demuxer, the H.264 parser
+  # that turns what qtdemux emits into the byte stream the decoder takes, and
+  # the v4l2 decoder that is the Pi's own H.264 block. Nothing else in those
+  # packages is ever asked for -- but taking them whole put GTK, PulseAudio and
+  # OpenAL in the closure, 254 MB of software this box cannot use, for three
+  # shared objects. Copying the objects works because nix reads references out
+  # of the file: the closure comes out as what the plugin links, not as what
+  # its package was built beside.
+  #
+  # A missing name fails the build rather than the box, which is the point:
+  # a plugin that is quietly not there is a video page that is quietly black.
+  gstExtraPlugins = pkgs.runCommand "pesmarica-gst-plugins" { } ''
+    mkdir -p $out/lib/gstreamer-1.0
+    for so in \
+      ${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/libgstisomp4.so \
+      ${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/libgstvideo4linux2.so \
+      ${pkgs.gst_all_1.gst-plugins-bad}/lib/gstreamer-1.0/libgstvideoparsersbad.so
+    do
+      cp "$so" $out/lib/gstreamer-1.0/
+    done
+  '';
+
+  # No audio anywhere: the pipeline above ends at a video sink, so a stream the
+  # box cannot decode is a stream nothing was going to play. That is what lets
+  # gst-libav, and ffmpeg behind it, stay out of the closure entirely.
   gstPlugins = [
-    pkgs.gst_all_1.gst-libav
-    pkgs.gst_all_1.gst-plugins-bad
+    gstExtraPlugins
     pkgs.gst_all_1.gst-plugins-base
-    pkgs.gst_all_1.gst-plugins-good
     pkgs.gst_all_1.gstreamer
   ];
   gstPluginPath = lib.concatMapStringsSep ":" (p: "${p}/lib/gstreamer-1.0") gstPlugins;
