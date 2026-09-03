@@ -553,7 +553,19 @@ in
     # lets go after a minute idle, the units holding it are *stopped* rather
     # than failed so Restart=always never fires, and the box is at a console
     # one minute after boot. Pin it.
-    options = lib.mkForce [ "noatime" "umask=0077" "x-systemd.device-timeout=30s" ];
+    #
+    # x-initrd.mount is listed here because mkForce drops *every* other
+    # contribution to the list, including the one neededForBoot makes. Without
+    # it the initrd never mounts this partition, so the squashfs below -- named
+    # by its path under /sysroot/boot/firmware -- is not there to loop-mount,
+    # and the box dies in the initrd with no store and no console to say so.
+    # Two releases shipped that way.
+    options = lib.mkForce [
+      "noatime"
+      "umask=0077"
+      "x-initrd.mount"
+      "x-systemd.device-timeout=30s"
+    ];
   };
   # The device is named by its path *in the initrd*, where the boot partition
   # sits under /sysroot -- and systemd orders this after that mount from the
