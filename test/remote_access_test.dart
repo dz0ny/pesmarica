@@ -70,6 +70,11 @@ void main() {
     expect((await call('POST', '/api/next')).statusCode, 200);
     expect((await call('POST', '/api/prev')).statusCode, 200);
     expect((await call('POST', '/api/show/2')).statusCode, 200);
+    // The zoom is on this side because it writes nothing: it moves a number
+    // held in memory that dies with the page, not the scale on the card.
+    expect((await call('POST', '/api/zoom/in')).statusCode, 200);
+    expect((await call('POST', '/api/zoom/out')).statusCode, 200);
+    expect((await call('POST', '/api/zoom/reset')).statusCode, 200);
   });
 
   test('the remote page and its assets are open', () async {

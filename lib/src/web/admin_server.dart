@@ -133,8 +133,11 @@ class AdminServer {
   ///
   /// Reading is open and writing is not, with two deliberate exceptions in each
   /// direction: `/manage` reads nothing but is the door to everything, so it
-  /// asks; and the three navigation calls write nothing to the card -- they
-  /// only move the display, which is the whole point of the remote.
+  /// asks; and the navigation and zoom calls write nothing to the card -- they
+  /// only change what the room is looking at, which is the whole point of the
+  /// remote. The zoom they change is [Presenter.liveScale], which lives in
+  /// memory and dies with the page; the per-page zoom that is kept on the card
+  /// is edited through `/api/pages`, behind the password.
   static bool _isOpen(String method, String path) {
     if (path == '/manage') return false;
     if (method == 'GET' && !path.startsWith('/api/')) return true;
@@ -145,6 +148,9 @@ class AdminServer {
     if (method == 'POST') {
       return path == '/api/next' ||
           path == '/api/prev' ||
+          path == '/api/zoom/in' ||
+          path == '/api/zoom/out' ||
+          path == '/api/zoom/reset' ||
           _remoteShow.hasMatch(path);
     }
     return false;
@@ -197,6 +203,18 @@ class AdminServer {
     })
     ..post('/api/prev', (Request r) {
       presenter.previous();
+      return _json(_remoteState());
+    })
+    ..post('/api/zoom/in', (Request r) {
+      presenter.nudgeZoom(1);
+      return _json(_remoteState());
+    })
+    ..post('/api/zoom/out', (Request r) {
+      presenter.nudgeZoom(-1);
+      return _json(_remoteState());
+    })
+    ..post('/api/zoom/reset', (Request r) {
+      presenter.clearLiveZoom();
       return _json(_remoteState());
     })
     ..put('/api/settings', _putSettings)
@@ -289,6 +307,9 @@ class AdminServer {
     'current': presenter.current?.number,
     'protected': songbook.settings.isProtected,
     'rev': songbook.revision,
+    // One number, so a second phone in the room shows the zoom the first one
+    // dialled in -- and so the remote can grey out its buttons at the ends.
+    'zoom': presenter.liveScale,
   };
 
   /// The page list, for whoever is browsing rather than driving.

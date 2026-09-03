@@ -164,8 +164,10 @@ can serve the typeface out of `assets/fonts/` too) and the `assets:` list in
 **The password guards editing, not the room.** `/` is the remote and is open to
 anyone on the access point; `/manage` and everything that writes is not. The
 rule lives in one place, `AdminServer._isOpen`, and `remote_access_test.dart`
-pins it. The three navigation calls are open because they write nothing to the
-card -- anything new that does write belongs on the gated side.
+pins it. The navigation and zoom calls are open because they write nothing to
+the card -- the zoom they move is `Presenter.liveScale`, held in memory and
+dropped when the page changes, not the per-page `scale` in the front matter.
+Anything new that does write belongs on the gated side.
 
 **The remote polls, so the poll has to stay small.** `/api/remote` answers with
 the current page and `Songbook.revision`, and nothing else; the page list is a

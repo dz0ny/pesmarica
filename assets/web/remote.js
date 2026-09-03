@@ -8,6 +8,8 @@
 //
 // It does one thing -- put a page on the screen -- in the two ways an operator
 // already knows: type the number and press Enter, or step back and forward.
+// The zoom beside them is the same kind of thing: it changes what the room is
+// looking at and writes nothing, which is why it may live on the open page.
 // The songbook index is a page too long to sit under the keypad, so it opens
 // over the top when somebody knows the song by its first line instead.
 
@@ -24,7 +26,7 @@ const MAX_DIGITS = 5;
 const MOST_ROWS = 120;
 
 function Remote() {
-  const [now, setNow] = useState({ current: null, rev: -1 });
+  const [now, setNow] = useState({ current: null, rev: -1, zoom: 1 });
   const [pages, setPages] = useState([]);
   const [typed, setTyped] = useState('');
   const [find, setFind] = useState('');
@@ -100,6 +102,8 @@ function Remote() {
       else if (e.key === 'Backspace') { e.preventDefault(); typed ? rub() : drive('/api/prev'); }
       else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') drive('/api/next');
       else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') drive('/api/prev');
+      else if (e.key === '+' || e.key === '=') drive('/api/zoom/in');
+      else if (e.key === '-') drive('/api/zoom/out');
       else if (e.key === 'Escape') setTyped('');
     };
     addEventListener('keydown', onKey);
@@ -111,6 +115,11 @@ function Remote() {
     finder.current.showModal();
     search.current.focus();
   };
+
+  // The zoom is a nudge on top of whatever size the page is written at, and it
+  // is deliberately shown as one: it is not stored anywhere, it goes away when
+  // the page changes, and the size kept in the songbook is edited at /manage.
+  const nudged = Math.round(((now.zoom ?? 1) - 1) * 100);
 
   const live = pages.find((page) => page.number === now.current);
   const needle = find.trim().toLowerCase();
@@ -153,6 +162,15 @@ function Remote() {
       <div class="step">
         <button onClick=${() => drive('/api/prev')}>◀ Nazaj</button>
         <button onClick=${() => drive('/api/next')}>Naprej ▶</button>
+      </div>
+
+      <div class="zoom">
+        <button class="key" title="Pomanjšaj" onClick=${() => drive('/api/zoom/out')}>−</button>
+        <button
+          class="key act" disabled=${nudged === 0}
+          title="Nazaj na velikost strani" onClick=${() => drive('/api/zoom/reset')}
+        >${nudged === 0 ? 'Velikost' : (nudged > 0 ? '+' : '−') + Math.abs(nudged) + ' %'}</button>
+        <button class="key" title="Povečaj" onClick=${() => drive('/api/zoom/in')}>+</button>
       </div>
 
       <div class="pad">

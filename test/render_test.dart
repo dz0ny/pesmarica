@@ -115,6 +115,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets("the remote's zoom reaches the type on the wall", (tester) async {
+    await show(tester);
+    final plain = bodyFontSize(tester);
+
+    // The zoom is part of the AutoFit signature through the scale it feeds, so
+    // the fit restarts rather than leaving the page at the old size.
+    presenter.nudgeZoom(2);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(bodyFontSize(tester), closeTo(plain * 1.2, 0.01));
+
+    // And it belongs to the page, not to the screen.
+    presenter.next();
+    presenter.previous();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(bodyFontSize(tester), closeTo(plain, 0.01));
+
+    // The zoom flashes a note on screen; let its timer run out before the
+    // tree goes away.
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   testWidgets('flipping polarity swaps the two colours', (tester) async {
     await show(tester);
     expect(presenter.settings.theme, PageTheme.dark);
