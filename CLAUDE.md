@@ -31,7 +31,7 @@ it is easier to drive and to kill than `flutter run`:
 flutter build macos --debug
 PESMARICA_CONTENT=$PWD/content \
   ./build/macos/Build/Products/Debug/pesmarica.app/Contents/MacOS/pesmarica &
-curl -s localhost:8080/api/state | python3 -m json.tool
+curl -s localhost:80/api/state | python3 -m json.tool
 ```
 
 Kill it with `pkill -f "Products/Debug/pesmarica"` when done. Paging around no

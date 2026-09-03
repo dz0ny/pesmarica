@@ -773,10 +773,9 @@ in
       "/boot/firmware"
     ];
 
-    # systemctl: the web interface applies a network change and restarts this
-    # unit onto a bundle it has just installed. tar and gzip: unpacking that
-    # bundle.
-    path = [ pkgs.systemd pkgs.gnutar pkgs.gzip ];
+    # systemctl: the web interface applies a network change by restarting this
+    # unit. Nothing here unpacks anything any more.
+    path = [ pkgs.systemd ];
 
     serviceConfig = {
       Type = "simple";

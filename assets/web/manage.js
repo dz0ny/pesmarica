@@ -657,7 +657,7 @@ function Manage() {
         <p class="hint">
           Brez imena omrežja naprava postavi svoje, na katero se povežeš s
           telefonom. Z imenom se poveže na obstoječe omrežje in je dosegljiva na
-          <code>pesmarica.local:8080</code>.
+          <code>pesmarica.local</code>.
         </p>
         ${net.status && html`<p class="hint">Zadnjič: ${net.status}</p>`}
         <label class="field">
