@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Covers tool/system_switch.sh against fake boot partitions. The nix half of a
-# system update cannot be built or booted here, but the switch can, and the
-# switch is what decides whether a box comes back. Every refusal below is a
-# card reader trip that did not happen.
+# Covers nix/scripts/system_switch.sh against fake boot partitions. The nix
+# half of a system update cannot be built or booted here, but the switch can,
+# and the switch is what decides whether a box comes back. Every refusal below
+# is a card reader trip that did not happen.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SWITCH="$HERE/system_switch.sh"
+ROOT="$(cd "$HERE/.." && pwd)"
+SWITCH="$ROOT/nix/scripts/system_switch.sh"
 pass=0; fail=0
 ok() { printf '  ok   %s\n' "$1"; pass=$((pass + 1)); }
 no() { printf '  FAIL %s\n' "$1"; fail=$((fail + 1)); }

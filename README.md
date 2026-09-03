@@ -64,7 +64,7 @@ know from PowerPoint — type a number, press Enter.
 | Recovery | A rejected access point config is replaced with the shipped default |
 | Security | One password over editing, salted and hashed; cookie or `X-Pesmarica-Auth` header |
 | Appliance | NixOS image with the unit files, network, and paths defined once |
-| Updates | Two app slots, an atomic flip, and an automatic revert if the new one will not start |
+| Updates | Two system slots on the card; the box can fetch a release itself, and installs only when asked |
 | Durability | Atomic writes; nothing is written to the card unless somebody edits a page |
 
 ## How It Works
@@ -143,6 +143,15 @@ way to do it. The boot partition has two slots; the box says which it is
 running, the deploy fills the other from the release and points the firmware at
 it. The previous system stays whole in its slot, and rollback is a card reader
 and one line of `config.txt`.
+
+A box that has been given a network can do the fetching half itself. Turn
+**Posodobitev → Sama poišči in prenesi novo različico** on in the web interface
+and it asks GitHub for the latest release once an hour, writes it into the free
+slot, and stops there. Installing is a button someone presses: it takes the
+screen away for a couple of minutes while the box reboots into the new slot,
+which is not a decision for a timer to make in the middle of a service. It is
+off until turned on — the download is half a gigabyte over whatever connection
+the box was given — and a box that is its own access point never asks at all.
 
 ## First Run
 
@@ -484,13 +493,13 @@ All are SIL Open Font License; the licences ship in `assets/fonts/`.
 flutter test
 ```
 
-Two things run outside the Dart suite, because they are shell that has to work
-when the app does not: the launcher's A/B slot picking and the boot-partition
-preconfiguration. Both are lifted out of `nix/modules/pesmarica.nix` and run
-against stub files, so neither needs a Pi:
+Three things run outside the Dart suite, because they are shell that has to work
+when the app does not: the slot switch, the updater that fills a slot, and the
+boot-partition preconfiguration. All three run against stub files, so none of
+them needs a Pi:
 
 ```bash
-./tool/test_system_switch.sh && ./tool/test_boot_config.sh
+./tool/test_system_switch.sh && ./tool/test_update_check.sh && ./tool/test_boot_config.sh
 ```
 
 The web interface is served from `assets/web/` through the Flutter asset bundle,

@@ -102,7 +102,10 @@ if ! diff -q "$onbox" "$inbuild" >/dev/null; then
 fi
 rm -f "$onbox" "$inbuild"
 
-ssh "$HOST" "FIRMWARE=$FIRMWARE bash -s $SLOT" < "$HERE/system_switch.sh"
+# Piped in rather than run on the box: this deploy has to work against a box
+# whose image predates the copy the image now installs, and the copy that
+# decides is the one being shipped.
+ssh "$HOST" "FIRMWARE=$FIRMWARE bash -s $SLOT" < "$ROOT/nix/scripts/system_switch.sh"
 
 echo "==> rebooting $HOST"
 # sync, then restart through sysrq. A clean shutdown tears down the loop

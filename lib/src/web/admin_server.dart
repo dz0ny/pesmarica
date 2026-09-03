@@ -12,6 +12,7 @@ import '../data/presenter.dart';
 import '../data/songbook.dart';
 import '../model/settings.dart';
 import '../model/song_page.dart';
+import '../update/update_status.dart';
 import 'credentials.dart';
 import 'static_assets.dart';
 
@@ -21,8 +22,13 @@ import 'static_assets.dart';
 /// It writes plain markdown into the content folder; the display picks the
 /// change up through the file watcher, so there is no second source of truth.
 class AdminServer {
-  AdminServer(this.songbook, this.presenter, {BootConfig? boot})
-    : boot = boot ?? BootConfig.fromEnvironment();
+  AdminServer(
+    this.songbook,
+    this.presenter, {
+    BootConfig? boot,
+    UpdateStatusFile? updates,
+  }) : boot = boot ?? BootConfig.fromEnvironment(),
+       updates = updates ?? UpdateStatusFile.fromEnvironment();
 
   final Songbook songbook;
   final Presenter presenter;
@@ -30,6 +36,11 @@ class AdminServer {
   /// The two files on the boot partition. What can be typed onto a card before
   /// the box has ever been switched on is also editable from here.
   final BootConfig boot;
+
+  /// What the updater in the image left in tmpfs. The app never checks for a
+  /// release itself; it reads this and, when asked, starts the unit that
+  /// installs what is already on the card.
+  final UpdateStatusFile updates;
 
   final StaticAssets _assets = StaticAssets();
 
@@ -220,6 +231,7 @@ class AdminServer {
     ..put('/api/settings', _putSettings)
     ..get('/api/network', (Request r) => _json(_network()))
     ..put('/api/network', _putNetwork)
+    ..post('/api/update/install', _installUpdate)
     ..post('/api/images', _uploadImage)
     ..get('/media/<name|[^/]+>', _media)
     // What phones and laptops fetch to decide whether a network is usable.
@@ -326,6 +338,7 @@ class AdminServer {
     'rev': songbook.revision,
     'protected': songbook.settings.isProtected,
     'settings': songbook.settings.toJson(),
+    'update': updates.read()?.toJson(),
     'fonts': <Map<String, String>>[
       for (final font in AppFont.all)
         <String, String>{'id': font.id, 'label': font.label},
@@ -577,6 +590,47 @@ class AdminServer {
     } catch (e) {
       debugPrint('pesmarica: could not apply the network settings: $e');
     }
+  }
+
+  // --- Updating -----------------------------------------------------------
+
+  /// Boots the system the updater has already put in the free slot.
+  ///
+  /// Everything hard about an update -- deciding there is one, fetching it,
+  /// writing it, refusing a half-written slot -- happened before this, in the
+  /// image, on a timer. What is left is a decision only a person can make: the
+  /// screen goes dark for a minute or two, and it must not do that in the
+  /// middle of a service. So it is a button, and the answer goes out before the
+  /// unit that reboots the box is started.
+  Future<Response> _installUpdate(Request request) async {
+    final status = updates.read();
+    if (status == null || !status.isReady) {
+      return _json(<String, Object?>{
+        'error': 'Ni pripravljene posodobitve.',
+      }, status: 409);
+    }
+    try {
+      final result = await Process.run('systemctl', <String>[
+        'start',
+        '--no-block',
+        'pesmarica-update-install.service',
+      ]);
+      if (result.exitCode != 0) {
+        debugPrint('pesmarica: update install failed: ${result.stderr}');
+        return _json(<String, Object?>{
+          'error': 'Namestitve ni bilo mogoče začeti.',
+        }, status: 500);
+      }
+    } catch (e) {
+      debugPrint('pesmarica: could not start the update: $e');
+      return _json(<String, Object?>{
+        'error': 'Namestitve ni bilo mogoče začeti.',
+      }, status: 500);
+    }
+    return _json(<String, Object?>{
+      'ok': true,
+      'installing': status.available,
+    });
   }
 
   Response _show(Request request, String number) {

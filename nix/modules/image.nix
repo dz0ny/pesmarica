@@ -43,6 +43,22 @@ let
     cp ${rootfs} $out/${config.boot.loader.raspberry-pi.nixosGenerationsDir}/default/rootfs.img
   '';
 
+  # What the card says it is running, for the updater to compare a release
+  # against. CI writes the tag into nix/version before it builds; a build on a
+  # laptop has no such file and says so, which the updater reads as "unknown"
+  # and treats as older than any release -- one download, and then the marker
+  # the update itself writes is the truth.
+  #
+  # It is written into the image rather than into the firmware derivation above
+  # on purpose: that derivation is also what a release ships as a tarball, and
+  # both the deploy and the updater write .complete *last*, so that a transfer
+  # cut short leaves a slot they refuse. An archive carrying its own marker
+  # would undo exactly that.
+  version =
+    if builtins.pathExists ../version
+    then lib.removeSuffix "\n" (builtins.readFile ../version)
+    else "unknown";
+
   songbookMiB = 512;
   songbookClusterSectors = 8; # 4 KiB clusters: a sane FAT once this fills a card.
 in
@@ -104,6 +120,12 @@ in
 
         cp -r ${firmware} firmware
         chmod -R u+w firmware
+        # The marker every slot carries once it is whole: the version in it, and
+        # its presence at all, is what pesmarica-system-switch checks before
+        # pointing the firmware at a slot. Without it a card could be updated
+        # but never rolled back to what it was flashed with.
+        printf '%s\n' "${version}" \
+          > firmware/${config.boot.loader.raspberry-pi.nixosGenerationsDir}/default/.complete
         find firmware -exec touch --date=2000-01-01 {} +
 
         # Twice what it holds, so a second slot fits beside it one day, and a

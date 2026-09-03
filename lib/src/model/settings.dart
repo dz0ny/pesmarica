@@ -41,6 +41,7 @@ class Settings {
     this.rotation = 0,
     this.httpPort = 80,
     this.httpEnabled = true,
+    this.autoUpdate = false,
     this.password,
     this.passwordHash,
     this.passwordSalt,
@@ -71,6 +72,16 @@ class Settings {
   final int httpPort;
   final bool httpEnabled;
 
+  /// Whether the box may fetch a newer release and stage it in the slot it is
+  /// not running from. Off until somebody turns it on: the download is half a
+  /// gigabyte over whatever connection the box was given, and a hall's guest
+  /// wifi is not the place to spend that unasked. Nothing is ever installed by
+  /// it either way -- that is a button, pressed by whoever can see the screen.
+  ///
+  /// The app only stores this. `pesmarica-update-check` on the box reads the
+  /// same file, the same way the launcher reads `rotation`.
+  final bool autoUpdate;
+
   /// A password typed straight into `settings.json` by a human. It is hashed
   /// and cleared on the next load, so plaintext never lingers in the file.
   final String? password;
@@ -93,6 +104,7 @@ class Settings {
     int? rotation,
     int? httpPort,
     bool? httpEnabled,
+    bool? autoUpdate,
     String? password,
     String? passwordHash,
     String? passwordSalt,
@@ -106,6 +118,7 @@ class Settings {
     rotation: rotation ?? this.rotation,
     httpPort: httpPort ?? this.httpPort,
     httpEnabled: httpEnabled ?? this.httpEnabled,
+    autoUpdate: autoUpdate ?? this.autoUpdate,
     password: clearPassword ? null : (password ?? this.password),
     passwordHash: clearPassword ? null : (passwordHash ?? this.passwordHash),
     passwordSalt: clearPassword ? null : (passwordSalt ?? this.passwordSalt),
@@ -121,6 +134,7 @@ class Settings {
     rotation: rotation,
     httpPort: httpPort,
     httpEnabled: httpEnabled,
+    autoUpdate: autoUpdate,
     passwordHash: passwordHash,
     passwordSalt: passwordSalt,
   );
@@ -134,6 +148,7 @@ class Settings {
     'rotation': rotation,
     'httpPort': httpPort,
     'httpEnabled': httpEnabled,
+    'autoUpdate': autoUpdate,
     // `password` is intentionally never written back — see [password].
     if (passwordHash != null) 'passwordHash': passwordHash,
     if (passwordSalt != null) 'passwordSalt': passwordSalt,
@@ -148,6 +163,7 @@ class Settings {
     rotation: _rotation(json['rotation']),
     httpPort: _int(json['httpPort'], 80),
     httpEnabled: json['httpEnabled'] as bool? ?? true,
+    autoUpdate: json['autoUpdate'] as bool? ?? false,
     password: _text(json['password']),
     passwordHash: _text(json['passwordHash']),
     passwordSalt: _text(json['passwordSalt']),
