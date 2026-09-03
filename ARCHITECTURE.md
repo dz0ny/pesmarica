@@ -150,9 +150,9 @@ ordinary static files — `assets/web/index.html`, `app.css`, `app.js`,
 the Flutter asset bundle.
 
 Assets rather than files on disk, because the signage host has no document root
-worth pointing at: on the Pi the app is a flutter-pi bundle in `/opt`, and a
-static file server aimed at it would couple the HTTP layer to the deploy
-layout. `rootBundle` reads the same way in a desktop debug run, a widget test
+worth pointing at: on the Pi the app is a flutter-pi bundle inside the
+read-only Nix store, and a static file server aimed at it would couple the HTTP
+layer to the image layout. `rootBundle` reads the same way in a desktop debug run, a widget test
 and a release bundle. They are cached in memory on first read with an md5
 `ETag`, so a reload costs a 304 and the browser keeps the bytes.
 
@@ -204,22 +204,20 @@ internet; the server plays along by redirecting the probe URLs the various
 platforms fetch (`/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, …) and
 any other unrouted GET.
 
-`hostapd.conf` on the data partition is the source of truth for the AP — not a
-rendering of something in `settings.json`, so there is nothing to drift out of
-sync and a hand-edit over the serial console is as valid as a change made from
-a phone. `AccessPointFile` rewrites only the keys it owns and passes every
-other directive through, so the radio tuning in the shipped default survives a
-passphrase change made on a phone.
+`hostapd.conf` on the data partition is the source of truth for the AP, and
+**nothing in the app writes it.** It used to: the web interface could rename the
+network, and a config hostapd rejects is a brick recoverable only by serial
+console or a card reader. Losing the access point means losing the only way in,
+so that capability was removed rather than guarded. The file is FAT32 precisely
+so it can be edited with the card in a laptop, and it ships in the image so the
+network can be renamed before the box is ever powered on. `ap-preflight`
+re-checks it at boot and restores the shipped default if it cannot work.
 
-Losing the access point means losing the only way in, so a bad config is
-guarded twice: `AccessPoint.problem` refuses to write anything hostapd would
-reject, and `ap-preflight` re-checks the file at boot and restores the shipped
-default if it cannot work. The write itself is a rename, like every other write
-in this project.
-
-Changing the AP disconnects whoever changed it. The handler therefore answers
-the request first and restarts hostapd a second later, so the browser gets to
-see which network to rejoin.
+`wifi.conf` on the boot partition is the opposite file with the opposite rule:
+it says which network to *join*, the app does write it, and hostapd never reads
+it. A name typed into a phone can leave the box looking for a network that is
+not there — which `pesmarica-wifi-fallback` undoes after 45 seconds — but it can
+never leave hostapd unable to start.
 
 ### Auth
 
@@ -258,11 +256,14 @@ typing the address of a protected page just works.
   transfer is a folder, which `git`, `rsync` and Syncthing already handle.
 - **No scheduling or playlists.** This is a songbook an operator drives, not a
   slideshow. Autoplay would be a different product.
-- **No wifi client mode, ever.** No `wpa_supplicant` in the image, so there are
-  no credentials on the box to leak and no uplink to wait for at boot. It also
-  means no NTP, no remote access from outside the room, and no updates that are
-  not carried in by hand — which for an appliance in a hall is the point.
-- **One place defines the system.** The image in `os/` owns the unit, the
-  partitions and the paths; `tool/deploy_pi.sh` only pushes a new build onto a
-  box that already runs it. There is deliberately no second installer that
-  could disagree with the image.
+- **The access point is the default, and joining a network is opt-in.** With no
+  `wifi.conf` the box is its own AP and nothing dials out; give it one and it
+  joins, falling back to the AP after 45 seconds if that fails. The fallback is
+  what makes it safe to point the box at a network from a phone.
+- **One place defines the system.** The flake in `nix/` owns the unit, the
+  partitions and the paths. There is deliberately no second installer that
+  could disagree with it — and no second updater either: the app is in the
+  closure, so `tool/deploy_system.sh` replacing the system replaces it too.
+  A bundle updater with its own slots and trial counter existed alongside it
+  for a while, and two mechanisms that can disagree about which version is
+  running is worse than one that is slower.
