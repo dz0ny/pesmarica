@@ -329,14 +329,38 @@ with `.` only because it mounts `nix/` into the container without `.git`.
 The image cannot be built or booted from a test run here; it needs an aarch64
 Linux builder and a real Zero 2 W. Treat changes under `nix/` as unverified
 until someone flashes a card, and say so. CI builds it on Linux runners, which
-is the fastest way to find out whether a change even compiles. The one exception
-is `pesmarica-boot-config`, which `tool/test_boot_config.sh` lifts out of the
-module and runs against fake boot partitions.
+is the fastest way to find out whether a change even compiles. The exceptions
+are the shell: `pesmarica-boot-config`, which `tool/test_boot_config.sh` lifts
+out of the module, and the two scripts in `nix/scripts`, which take every path
+from the environment and so run as they are against a fake boot partition.
 
 **The app has no update path of its own.** It is in the closure, so replacing
-the system replaces it, and `tool/deploy_system.sh` is the only updater. A
-second one existed and was removed: a faster Dart loop is not worth two
-updaters that can disagree about which version is running.
+the system replaces it. A second updater in Dart existed and was removed: a
+faster loop is not worth two mechanisms that can disagree about which version
+is running. What the box does by itself is the *fetching* half --
+`pesmarica-update-check` on an hourly timer, which asks GitHub for the latest
+release and fills the free slot with it, and stops. The Dart side reads the
+status file that leaves in tmpfs and starts one unit when the operator presses
+the button; it never downloads, never switches and never reboots. Off unless
+`autoUpdate` in `settings.json` says otherwise, which the shell reads with jq
+the same way the launcher reads `rotation`.
+
+**The switch is one script, run three ways.** `nix/scripts/system_switch.sh` is
+piped over ssh by `tool/deploy_system.sh`, installed in the image as
+`pesmarica-system-switch` for `pesmarica-update-install.service`, and run by
+`tool/test_system_switch.sh` against a fake tree. Its refusals are what decide
+whether a box comes back, so there may not be a second copy of them; that is
+why it lives under `nix/` (a flake only sees its own root) rather than in
+`tool/`. `nix/scripts/update_check.sh` is there for the same reason, with
+`tool/test_update_check.sh` over it.
+
+**The marker goes last, and never inside the archive.** Both the deploy and the
+updater write `.complete` to a slot only once everything else is in it, because
+its presence is the whole proof that a transfer ran to the end. The release
+tarball therefore must not carry one: the updater unpacks with
+`--exclude .complete` and the image writes the marker in `image.nix` rather
+than in the firmware derivation, which is also what a release ships. A slot
+that looks finished and is missing its kernel is a card reader trip.
 
 ## Testing
 
@@ -344,11 +368,15 @@ updaters that can disagree about which version is running.
 over a temp songbook — fast, and where most logic belongs.
 `test/render_test.dart` and `test/title_test.dart` are widget tests over a real
 `PresenterScreen`. `tool/test_system_switch.sh` covers system updates: it runs
-`tool/system_switch.sh` against fake boot partitions, and every refusal it pins
+`nix/scripts/system_switch.sh` against fake boot partitions, and every refusal it pins
 is a card reader trip that did not happen.
 `test/network_api_test.dart` pins what the web interface may write to the boot
 partition -- above all that a passphrase wpa_supplicant would refuse is refused
 while there is still somebody connected to be told about it.
+`tool/test_update_check.sh` covers the other half: a fake GitHub and a fake
+boot partition, pinning above all that a download going wrong -- half a
+release, a dead uplink, an archive carrying its own marker -- costs only the
+slot the box is not running from.
 `test/remote_access_test.dart` starts a real server on a temp songbook and
 pins which routes need the password -- note that it has to null out
 `HttpOverrides.global`, because the test binding stubs `HttpClient` into

@@ -114,6 +114,20 @@ jobs:
         # copied in beside it -- the same thing `make bundle` does.
         run: cp -R content nix/content
 
+      # What the card will say it is running. The updater on the box compares a
+      # release tag against this, so a freshly flashed card that is already
+      # current does not spend half a gigabyte finding that out. A build with no
+      # tag to name says "unknown", and then the first release counts as newer.
+      - name: Stamp the version
+        # Through the environment rather than interpolated into the script: a
+        # tag is text somebody chose, and it ends up in a shell either way.
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=unknown
+          [ "$GITHUB_EVENT_NAME" != release ] || version="$TAG"
+          printf '%s\n' "$version" > nix/version
+
       - uses: DeterminateSystems/nix-installer-action@v22
 
       # The kernel comes from nixos-raspberrypi's cache; this is for our own

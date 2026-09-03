@@ -56,6 +56,9 @@ nix/bundle/
 nix/content/
 nix/out/
 nix/.docker/
+# The release tag, written by CI before it builds so the card can say which
+# version it is running. A build on a laptop has none and says "unknown".
+nix/version
 
 # Per-machine Claude Code permissions; launch.json beside it is shared.
 .claude/settings.local.json

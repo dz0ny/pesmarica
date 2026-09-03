@@ -7,9 +7,12 @@
 # update never touches the running slot -- it fills the other one and moves
 # os_prefix, which is one line in a plain file. Nothing that is open moves.
 #
-# This runs on the box, piped in over ssh by tool/deploy_system.sh. It also
-# runs on a laptop against a fake tree, which is what tool/test_system_switch.sh
-# does -- hence FIRMWARE rather than a hardcoded path.
+# It runs three ways, which is why it lives under nix/ and takes FIRMWARE from
+# the environment rather than hardcoding a path: piped in over ssh by
+# tool/deploy_system.sh, installed in the image as pesmarica-system-switch and
+# run by pesmarica-update-install.service, and on a laptop against a fake tree,
+# which is what tool/test_system_switch.sh does. One copy of the refusals: they
+# are what decides whether a box comes back, and two of them could disagree.
 set -euo pipefail
 
 FIRMWARE="${FIRMWARE:-/boot/firmware}"

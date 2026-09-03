@@ -85,6 +85,10 @@ let
   clientMarker = "${runtimeDir}/client";
   supplicantConf = "${runtimeDir}/wpa_supplicant.conf";
   rotationFile = "${runtimeDir}/rotation";
+  # What the updater below leaves behind and the web interface reads. tmpfs
+  # again, and for a plainer reason: a note about a download in progress is
+  # worth nothing after a reboot, and the card is the thing being spared.
+  updateStatus = "${runtimeDir}/update.json";
 
   # networkd applies the first .network that matches, in lexical order across
   # /run and /etc together, so a 10- file dropped here wins over the access
@@ -271,6 +275,20 @@ let
       fi
     '';
   };
+  # The two halves of a system update, as they run on the box. Both are plain
+  # scripts under nix/scripts rather than text in this file, because both are
+  # also run elsewhere: the switch is piped over ssh by tool/deploy_system.sh,
+  # and each has a test on a laptop against a fake boot partition. One copy of
+  # the refusals, which are what decides whether a box comes back.
+  #
+  # writeShellScriptBin rather than writeShellApplication: the scripts set their
+  # own options and take every path from the environment, which is what lets the
+  # tests point them at a temporary directory, and PATH comes from the units
+  # below.
+  systemSwitch = pkgs.writeShellScriptBin "pesmarica-system-switch"
+    (builtins.readFile ../scripts/system_switch.sh);
+  updateCheck = pkgs.writeShellScriptBin "pesmarica-update-check"
+    (builtins.readFile ../scripts/update_check.sh);
 in
 {
   system.stateVersion = "26.05";
@@ -774,6 +792,103 @@ in
     '';
   };
 
+  # --- Updating itself ------------------------------------------------------
+  #
+  # The box is normally its own access point with no uplink, so most runs of
+  # this end in the first twenty lines of the script. When there is a network,
+  # and only when somebody has turned `autoUpdate` on in the settings, it asks
+  # GitHub for the latest release and fills the slot the box is *not* running
+  # from -- which is the same thing tool/deploy_system.sh does over ssh, minus
+  # the ssh. Nothing here switches or reboots: that is one button on the
+  # management page, and the operator decides when the screen may go dark.
+  systemd.services.pesmarica-update-check = {
+    description = "Look for a newer release and stage it in the free slot";
+    unitConfig.RequiresMountsFor = [ "/boot/firmware" "/var/lib/pesmarica" ];
+    # Deliberately not after network-online.target: on a box that is its own
+    # access point that target is reached late or not at all, and waiting two
+    # minutes for wait-online to give up -- every hour, on a box whose answer is
+    # "there is no uplink" -- buys nothing. The script asks the routing table
+    # instead, which is the same question without the wait.
+    path = [
+      pkgs.coreutils
+      pkgs.curl
+      pkgs.gawk
+      pkgs.gnugrep
+      pkgs.gnutar
+      pkgs.iproute2
+      pkgs.jq
+      pkgs.zstd
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${updateCheck}/bin/pesmarica-update-check";
+      # Named rather than left to /etc/ssl: /etc is a read-only image here, and
+      # a curl that cannot verify GitHub fails in a way that reads exactly like
+      # having no network.
+      Environment = [ "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" ];
+      # Half a gigabyte over a hall's wifi onto an SD card. Nothing waits on
+      # this, so let it take as long as it takes and stop it if it hangs.
+      TimeoutStartSec = "2h";
+      # A download is the one thing on this box that is allowed to be slow and
+      # is never urgent; the app is what has to stay responsive.
+      Nice = 10;
+      IOSchedulingClass = "idle";
+    };
+  };
+
+  systemd.timers.pesmarica-update-check = {
+    description = "Hourly check for a newer release";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      # Not at boot: a box switched on for a service has better things to do
+      # with its first minutes than talk to GitHub.
+      OnBootSec = "15min";
+      OnUnitActiveSec = "1h";
+      # Every one of these boxes was flashed from the same image and would
+      # otherwise ask at the same second past the hour.
+      RandomizedDelaySec = "10min";
+    };
+  };
+
+  # What the button on the management page starts. It is a unit rather than the
+  # app doing it itself because the app is what the reboot kills: a process
+  # cannot both answer "yes, installing" and be gone.
+  systemd.services.pesmarica-update-install = {
+    description = "Boot the staged system";
+    unitConfig.RequiresMountsFor = "/boot/firmware";
+    path = [ pkgs.coreutils pkgs.gnugrep pkgs.gnused pkgs.jq ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      running=$(tr -d '[:space:]' < /etc/pesmarica-slot)
+      case "$running" in
+        a) free=b ;;
+        b) free=a ;;
+        *) echo "pesmarica: this system does not say which slot it runs" >&2; exit 1 ;;
+      esac
+
+      # The free slot can also hold the system this box was updated *from*, a
+      # complete and bootable one that the switch would happily take. Only what
+      # the checker just staged may be installed, and it said so in the status
+      # file.
+      staged=$(jq -r 'select(.state == "ready") | .available // empty' ${updateStatus} 2>/dev/null || true)
+      marker=$(head -1 "/boot/firmware/nixos-$free/default/.complete" 2>/dev/null || true)
+      if [ -z "$staged" ] || [ "$staged" != "$marker" ]; then
+        echo "pesmarica: slot $free does not hold a staged update; refusing" >&2
+        exit 1
+      fi
+
+      ${systemSwitch}/bin/pesmarica-system-switch "$free"
+
+      # sync, then restart through sysrq -- see boot.kernel.sysctl above. A
+      # clean shutdown tears down the loop device the store is executing from
+      # and does not come back from it.
+      sync
+      echo s > /proc/sysrq-trigger
+      sleep 1
+      echo b > /proc/sysrq-trigger
+    '';
+  };
+
   systemd.services.pesmarica = {
     description = "Pesmarica digital signage";
     wantedBy = [ "multi-user.target" ];
@@ -793,6 +908,9 @@ in
       Environment = [
         "PESMARICA_CONTENT=/var/lib/pesmarica"
         "PESMARICA_BOOT=/boot/firmware"
+        # Where the updater leaves its status, which is all the app knows about
+        # updates: it reads that one file and starts one unit.
+        "PESMARICA_RUN=${runtimeDir}"
       ];
       ExecStart = launch;
       Restart = "always";

@@ -13,6 +13,23 @@ import { previewHtml } from '/static/markdown.js';
 /// to build and useless to scroll.
 const MOST_ROWS = 120;
 
+/// What the updater in the image concluded, in a sentence. The states are the
+/// ones nix/scripts/update_check.sh writes; anything this version has not heard
+/// of is shown as it came, rather than swallowed -- a box running an older app
+/// than its updater should still say something true.
+function updateSays(update) {
+  const version = update.available || '';
+  switch (update.state) {
+    case 'off': return 'Samodejno iskanje posodobitev je izklopljeno.';
+    case 'offline': return 'Naprava nima povezave z internetom, zato posodobitev ne more preveriti.';
+    case 'current': return 'Nameščena različica ' + (update.running || '') + ' je najnovejša.';
+    case 'downloading': return 'Prenašam ' + version + ' …';
+    case 'ready': return version + ' je pripravljena za namestitev.';
+    case 'failed': return update.error || 'Zadnje preverjanje ni uspelo.';
+    default: return update.state;
+  }
+}
+
 const isMarkdown = (file) => /\.(md|markdown|txt)$/i.test(file.name);
 const isImage = (file) => file.type.startsWith('image/');
 
@@ -71,6 +88,7 @@ function Manage() {
   const [live, setLive] = useState(null);
   const [find, setFind] = useState('');
   const rev = useRef(-1);
+  const ticks = useRef(0);
   const area = useRef(null);
   const settings = useRef(null);
   const pendingSelection = useRef(null);
@@ -79,6 +97,7 @@ function Manage() {
   const menu = useRef(null);
   const sheetSettings = useRef(null);
   const network = useRef(null);
+  const updates = useRef(null);
 
   // What wifi.conf on the boot partition says. Fetched when the dialog is
   // opened rather than polled: it changes when somebody changes it, and the
@@ -105,7 +124,11 @@ function Manage() {
     const tick = async () => {
       const now = await api('/api/remote');
       setLive(now.current);
-      if (now.rev !== rev.current) await refresh();
+      // Once a minute regardless: an update finishing its download is nobody's
+      // edit, so the revision does not move for it, and it is the one thing on
+      // this page that changes by itself. Fifteen ticks rather than a second
+      // timer, and only here -- the remote's poll stays what it was.
+      if (now.rev !== rev.current || ++ticks.current % 15 === 0) await refresh();
     };
     tick().catch((e) => say(e.message, true));
     const timer = setInterval(() => { if (!dirty) tick().catch(() => {}); }, 4000);
@@ -401,6 +424,26 @@ function Manage() {
     } catch (e) { say(e.message, true); }
   };
 
+  // --- Updating -----------------------------------------------------------
+  //
+  // The box does the looking and the fetching by itself, on a timer in the
+  // image; what reaches here is one small file it left behind. The only
+  // decision left is a human one -- installing takes the screen away for a
+  // couple of minutes, and that must not happen in the middle of a service.
+
+  const openUpdates = () => updates.current.showModal();
+
+  const install = async () => {
+    const version = (state.update && state.update.available) || 'novo različico';
+    if (!confirm('Naprava bo namestila ' + version +
+      ' in se znova zagnala. Zaslon bo nekaj minut prazen. Nadaljujem?')) return;
+    try {
+      await json('/api/update/install', 'POST', {});
+      updates.current.close();
+      say('Nameščam ' + version + '. Naprava se znova zaganja.');
+    } catch (e) { say(e.message, true); }
+  };
+
   /// A front matter field changes in memory and goes to the card with Shrani,
   /// like every other edit on this page -- so a title and a verse are one save,
   /// and closing the dialog is not a write.
@@ -423,6 +466,11 @@ function Manage() {
     menu.current.close();
     action();
   };
+
+  // The one thing about an update that belongs in the chrome rather than behind
+  // a menu: a release sitting in the free slot, waiting for somebody to say
+  // when. Everything else is a line in the dialog.
+  const ready = !!(state.update && state.update.state === 'ready');
 
   const onSheet = state.pages.find((page) => page.number === editing);
   const title = onSheet ? onSheet.title : '';
@@ -452,6 +500,7 @@ function Manage() {
           : html`<span class="n">${editing}</span> ${title}`}
       </span>
       <span class="grow"></span>
+      ${ready && html`<button class="quiet on-desk" onClick=${openUpdates}>Posodobitev</button>`}
       <button class="quiet on-desk" onClick=${openSettings}>Nastavitve</button>
       <button class="link on-desk" onClick=${flip}>${light ? 'Temno' : 'Svetlo'}</button>
       <a class="link on-desk" href="/">Daljinec</a>
@@ -595,6 +644,9 @@ function Manage() {
       <hr />
       <button onClick=${() => act(openSettings)}>Nastavitve zaslona</button>
       <button onClick=${() => act(openNetwork)}>Omrežje</button>
+      <button onClick=${() => act(openUpdates)}>
+        ${ready ? 'Posodobitev je pripravljena' : 'Posodobitev'}
+      </button>
       <button onClick=${() => { flip(); menu.current.close(); }}>
         ${light ? 'Temna barvna shema' : 'Svetla barvna shema'}
       </button>
@@ -697,6 +749,37 @@ function Manage() {
             Poveži
           </button>`}
         <button onClick=${() => network.current.close()}>Zapri</button>
+      </menu>
+    </dialog>
+
+    <dialog ref=${updates}>
+      <h2>Posodobitev</h2>
+      ${!state.update && html`
+        <p class="hint">
+          Ta naprava se ne posodablja sama. To velja za razvojni računalnik, ne
+          za zaslon.
+        </p>`}
+      ${state.update && html`
+        <p class="hint">${updateSays(state.update)}</p>
+        ${state.update.checked &&
+          html`<p class="hint">Nazadnje preverjeno: ${state.update.checked}</p>`}
+        <label class="field inline">
+          <input type="checkbox" checked=${s.autoUpdate === true}
+            onChange=${(e) => putSettings({ autoUpdate: e.target.checked })} />
+          <span>Sama poišči in prenesi novo različico</span>
+        </label>
+        <p class="hint">
+          Naprava prenese novo različico v prosti razdelek na kartici in počaka.
+          Nameščena ni nikoli sama — to je ta gumb.
+        </p>
+        ${ready && html`
+          <p class="warn">
+            Med nameščanjem se naprava znova zažene in zaslon je nekaj minut
+            prazen. Prejšnja različica ostane na kartici.
+          </p>`}`}
+      <menu>
+        ${ready && html`<button class="primary" onClick=${install}>Namesti</button>`}
+        <button onClick=${() => updates.current.close()}>Zapri</button>
       </menu>
     </dialog>`;
 }

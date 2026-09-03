@@ -94,8 +94,19 @@ by that path, and `config.txt`'s `os_prefix` names the slot the firmware boots.
 The deploy asks the box which slot it runs, fills the other, and moves
 `os_prefix` — one line in a plain file, written to a temp name and renamed.
 Nothing the running system has open is touched. A release carries a payload
-for each slot; the card image ships slot `a`. `../tool/system_switch.sh` is
-the on-box half, and `../tool/test_system_switch.sh` covers it without a Pi.
+for each slot; the card image ships slot `a`. `scripts/system_switch.sh` is the
+on-box half -- piped over ssh by the deploy, installed here as
+`pesmarica-system-switch` for the updater, and covered without a Pi by
+`../tool/test_system_switch.sh`.
+
+`scripts/update_check.sh` is the deploy without the laptop:
+`pesmarica-update-check.service`, on an hourly timer, asks GitHub for the
+latest release and fills the free slot from it. It runs only when `autoUpdate`
+in `settings.json` is on, only when the box is a client on a network with a
+default route, and it never switches or reboots -- the web interface offers
+`Namesti`, which starts `pesmarica-update-install.service`, and that is the
+only thing that moves `os_prefix`. `../tool/test_update_check.sh` covers it
+against a fake GitHub.
 
 The reboot goes through sysrq rather than a clean shutdown: the store is a loop
 device on a file on the boot partition, and the kernel does not come back from
@@ -118,8 +129,12 @@ The SD card is the part that dies, so in steady state nothing reaches it at all.
 The display used to stamp a view counter and a timestamp into the front matter
 after a page had been up for a few seconds, which meant a service wrote to the
 card every few minutes to record something nobody read; it does not any more.
-What is left is the songbook, written when a human edits a page, and
-`hostapd.conf` when someone changes the network.
+What is left is the songbook, written when a human edits a page,
+`hostapd.conf` when someone changes the network, and -- if auto-update is
+turned on -- a release written into the slot the box is not running from, which
+is a large write and the reason that setting is off by default. It is also the
+safest large write there is: the running slot is not touched, and a download
+cut halfway leaves a slot the switch refuses.
 
 The card is two FAT32 partitions and nothing else. `FIRMWARE` holds the Pi
 firmware, `config.txt`, and `nixos-<slot>/default/` with the kernel, the initrd,

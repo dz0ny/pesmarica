@@ -17,6 +17,16 @@ void main() {
     }
   });
 
+  test('auto-update is off until somebody turns it on, and then survives', () {
+    // Settings.toJson drops anything it does not know, and this one is read
+    // back out of the same file by a shell script on the box: a setting that
+    // did not survive the next write would turn itself off again.
+    expect(const Settings().autoUpdate, isFalse);
+    expect(Settings.decode('{}').autoUpdate, isFalse);
+    final saved = Settings.decode('{"autoUpdate": true}').encode();
+    expect(Settings.decode(saved).autoUpdate, isTrue);
+  });
+
   test('rotation survives a rewrite', () {
     // Settings.toJson drops anything it does not know, so a field that is not
     // carried explicitly is lost the next time the file is written.

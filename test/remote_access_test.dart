@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pesmarica/src/data/presenter.dart';
 import 'package:pesmarica/src/data/songbook.dart';
+import 'package:pesmarica/src/update/update_status.dart';
 import 'package:pesmarica/src/web/admin_server.dart';
 
 /// The password guards editing, not the room.
@@ -34,7 +35,14 @@ void main() {
     await songbook.start();
     await songbook.createPage(number: 1, title: 'Prva');
     await songbook.createPage(number: 2, title: 'Druga');
-    server = AdminServer(songbook, Presenter(songbook));
+    server = AdminServer(
+      songbook,
+      Presenter(songbook),
+      // The updater lives in the image and writes into tmpfs; point the server
+      // at a path in the temp songbook so this test does not depend on whether
+      // the machine running it happens to have one.
+      updates: UpdateStatusFile(File(p.join(root.path, 'update.json'))),
+    );
     await server.start();
     base = server.url!;
   });
@@ -97,6 +105,16 @@ void main() {
     // remote.
     expect((await call('GET', '/api/network')).statusCode, 401);
     expect((await call('PUT', '/api/network')).statusCode, 401);
+    // Installing an update takes the screen away for minutes and comes back a
+    // different system. Whoever may drive the display may not do that.
+    expect((await call('POST', '/api/update/install')).statusCode, 401);
+  });
+
+  test('installing an update needs one to be ready', () async {
+    // There is no updater on a laptop, so there is nothing staged, and the
+    // password alone does not make a reboot happen.
+    final response = await call('POST', '/api/update/install', cookie: cookie());
+    expect(response.statusCode, 409);
   });
 
   test('the management page sends you to the unlock screen', () async {
