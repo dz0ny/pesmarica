@@ -278,6 +278,14 @@ not any more, and the SSID must not be copied into `settings.json` either.
 to *join*, the app does write it, hostapd never reads it, and a bad name only
 costs the 45-second fallback.
 
+**The board has no clock.** There is no RTC, so the box boots at whatever the
+build stamped and drifts; `date` on a running box is not evidence of anything,
+and file mtimes on the card mean nothing. It bites hardest over HTTPS: a clock
+months behind makes every certificate "not yet valid", so the update checker
+fails its download with no hint as to why. `services.timesyncd` is what keeps
+it honest once there is a route -- on the access point there is none, and the
+clock is simply wrong until an uplink appears.
+
 **Never write a password anywhere.** `Songbook._adoptPassword` hashes a
 plaintext `password:` out of `settings.json` on load and rewrites the file
 without it. Anything new that touches settings must not reintroduce the

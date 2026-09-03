@@ -474,8 +474,14 @@ in
     };
   };
 
-  # Nothing dials out, so there is no clock to sync and nobody to sync with.
-  services.timesyncd.enable = false;
+  # The board has no RTC, so every boot starts at whatever the build stamped
+  # and drifts from there. That was harmless while nothing dialled out; the
+  # update checker does, over HTTPS, and a clock months behind makes every
+  # certificate "not yet valid" -- so the box could never fetch a release it
+  # was otherwise perfectly able to. timesyncd only does anything when there
+  # is a route, which on the access point there is not, and its state lives in
+  # /var/lib on the tmpfs.
+  services.timesyncd.enable = true;
 
   # ZFS comes in by default. On a box with 512 MB of RAM, a squashfs and two
   # FAT partitions it is closure weight and a boot-time warning.

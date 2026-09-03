@@ -136,11 +136,16 @@ fi
 
 # The slot being replaced is emptied first and counted as free: while this is
 # being written the running system is the fallback, and it is in the other
-# slot. Compressed size times three is a guess at the unpacked tree, and the
+# slot. The size below is a guess at the unpacked tree, and the
 # partition is sized for two slots, so this only ever catches a card that has
 # been filled with something else.
+#
+# A quarter over the compressed size, not three times it: nearly all of the
+# payload is rootfs.img, a zstd squashfs that barely shrinks again inside the
+# tarball. Three times was enough to refuse every real release on a card that
+# had room for it.
 if [ -n "$size" ] && [ "$size" != "null" ]; then
-	need=$(( size / 1024 * 3 + 32768 ))
+	need=$(( size / 1024 * 5 / 4 + 32768 ))
 	have_kb=$(df -k "$FIRMWARE" | awk 'NR==2 {print $4}')
 	reclaim=$(du -sk "$FIRMWARE/nixos-$free" 2>/dev/null | awk '{s+=$1} END {print s+0}')
 	if [ $(( have_kb + reclaim )) -lt "$need" ]; then
