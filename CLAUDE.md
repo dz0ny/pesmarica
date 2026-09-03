@@ -96,11 +96,9 @@ in a fake async zone, so `await songbook.saveSettings(...)` never completes and
 the test hangs with no output. Wrap it: `await tester.runAsync(() => ...)`. The
 same applies to anything touching the engine, such as `boundary.toImage()`.
 
-**Showing a page writes nothing.** Navigation used to arm a five second timer
-that stamped `views`/`lastShown` into the front matter; both the timer and the
-fields are gone, because the box writes to an SD card that a parish hall will
-brown out every winter. Nothing new should write on the display path — a write
-belongs to a human editing a page.
+**Showing a page writes nothing.** The box writes to an SD card that a parish
+hall will brown out every winter, so nothing on the display path may write — a
+write belongs to a human editing a page.
 
 **The bundled sans and serif families are variable fonts.** `FontWeight` alone
 picks a named instance that a single-file variable font does not have, so bold
@@ -118,40 +116,36 @@ survives exactly until the next settings write, then it is gone. Anything new
 that belongs in `settings.json` needs a field, a `copyWith` arm and a line in
 both `toJson` and `fromJson` — `rotation` has a test pinning precisely this.
 
-**Rotation is a flutter-pi startup flag.** The app cannot turn its own picture:
-the launcher in the image reads `rotation` out of `settings.json` and passes
-`--rotation`, so the web interface writes the setting and restarts the unit.
-Validate it at both ends — a panel showing a corner of the songbook looks like a
-dead box, and the way back is ssh.
-
 **The card is two FAT32 partitions, and the system is a file on the first.**
 `nix/modules/image.nix` builds it: `FIRMWARE` holds the Pi firmware,
 `config.txt` and `nixos-<slot>/default/` with the kernel, initrd, `cmdline.txt`,
-the device trees and `rootfs.img`, a zstd squashfs of the whole closure that the
-initrd loop-mounts as `/nix/store`; root is a tmpfs. No U-Boot, no ext4, no
-generations. There are two slots, `a` and `b`, and **a system's slot is baked
-into it at build time** (`pesmarica.slot`): its fstab names its own
-`rootfs.img` by that path, and `os_prefix` in `config.txt` names the slot the
-firmware boots. A system staged under any other name boots its own kernel
-against the previous squashfs — quietly, and it will even come up.
-`tool/deploy_system.sh` asks the box which slot it runs (`/etc/pesmarica-slot`),
-fills the other, and moves `os_prefix`; nothing the running system has open is
-touched. Do not rename slot directories: the store is a loop device on a file
-in there, and the kernel does not come back from tearing that down — which is
-also why the deploy reboots through sysrq rather than a clean shutdown. There
-is no automatic rollback (the firmware picks the kernel before anything of ours
-runs); the previous system stays whole in its slot, and the way back is one
-line of `config.txt` with a card reader.
-`PESMARICA` is the songbook, and the one place anything persists: the ssh
-host key lives in `.ssh/` there. The card can be pulled and the pages edited
-on any laptop -- that is the point -- and FAT32 is what makes it possible to
+the device trees and `rootfs.img` — a zstd squashfs of the whole closure that
+the initrd loop-mounts as `/nix/store`, with root a tmpfs. No U-Boot, no ext4,
+no generations.
+
+**A system's slot is baked into it at build time** (`pesmarica.slot`): its
+fstab names its own `rootfs.img` by that path, and `os_prefix` in `config.txt`
+names the slot the firmware boots. A system staged under any other name boots
+its own kernel against the previous squashfs — quietly, and it will even come
+up. `tool/deploy_system.sh` asks the box which slot it runs
+(`/etc/pesmarica-slot`), fills the other, and moves `os_prefix`; nothing the
+running system has open is touched. Never rename a slot directory: the store is
+a loop device on a file inside it, and the kernel does not come back from
+tearing that down — which is also why the deploy reboots through sysrq rather
+than a clean shutdown. There is no automatic rollback, since the firmware picks
+the kernel before anything of ours runs; the previous system stays whole in its
+slot, and the way back is one line of `config.txt` with a card reader.
+
+**`PESMARICA` is the only place anything persists** — the songbook, and the ssh
+host and authorized keys in `.ssh/`. The card can be pulled and the pages
+edited on any laptop; that is the point, and FAT32 is what makes it possible to
 ship both partitions populated: `mtools` writes them offline and `fatresize`
-grows the songbook on the first boot, with no marker, from what the card
-itself says. exFAT can do neither. FAT carries no permissions (they come from
-the mount, `umask=0077`) so nothing may `chmod` there, and no journal, so a
-power cut mid-write can cost more than the file being written. The image
-build runs unprivileged: no loop devices, no mounting, so a file goes onto a
-partition through `mcopy` and nothing else.
+grows the songbook on first boot, with no marker, from what the card itself
+says. exFAT can do neither. FAT carries no permissions (they come from the
+mount, `umask=0077`) so nothing may `chmod` there, and no journal, so a power
+cut mid-write can cost more than the file being written. The image build runs
+unprivileged — no loop devices, no mounting — so a file reaches a partition
+through `mcopy` and nothing else.
 
 **The squashfs device is named by its initrd path.** `fileSystems."/nix/.ro-store"`
 points at `/sysroot/boot/firmware/...` because that is where the boot
@@ -201,12 +195,15 @@ ones. What makes it safe to point the box at a network from a phone is
 `pesmarica-wifi-fallback.service`: no address in 45 seconds and the access point
 comes back. Anything new that can take the radio away has to keep that way back.
 
-**Rotation lives on the boot partition, not in the songbook.** `display.conf` is
-what the launcher hands flutter-pi, and `settings.json` only mirrors it so the
-web interface has something to show; `main.dart` adopts the card's value at
-startup when the two disagree. Write both or neither -- `_putSettings` does --
-or the box turns back on the next boot. `config.txt`'s own `display_rotate` is
-not a third place to look: the KMS driver ignores it.
+**Rotation is a flutter-pi startup flag, and it lives on the boot partition.**
+The app cannot turn its own picture: the launcher reads `display.conf` and
+passes `--rotation`, so the web interface writes the setting and restarts the
+unit. `settings.json` only mirrors it so the interface has something to show,
+and `main.dart` adopts the card's value when the two disagree — write both or
+neither (`_putSettings` does), or the box turns back on the next boot.
+`config.txt`'s own `display_rotate` is not a third place to look: the KMS
+driver ignores it. Validate at both ends; a panel showing a corner of the
+songbook looks like a dead box, and the way back is ssh.
 
 **Read-only `/etc` breaks anything that expects to write there.**
 `system.etc.overlay.mutable = false` is why `services.openssh.hostKeys` points
@@ -248,12 +245,11 @@ and the VA-API tracker then demands a driver that is gone; and mesa's
 unconditionally while only the WSL driver fills it.
 
 **`environment.defaultPackages` is empty, so a deploy may only use what the
-closure already carries.** Both deploy scripts used to push with rsync, which
-emptying that list had quietly removed -- and a box with no rsync could not
-receive the update that would have installed rsync. They push with `tar`
-instead, which systemd pulls in regardless. Anything new that shells out on
-the box has the same constraint: check a running one before believing it is
-there.
+closure already carries.** The deploy used to push with rsync, which emptying
+that list had quietly removed — and a box with no rsync could not receive the
+update that would have installed it. It pushes with `tar`, which systemd pulls
+in regardless. Anything new that shells out on the box has the same
+constraint: check a running one before believing it is there.
 
 **Root's home is RAM, so an ssh key put there lasts one boot.** Authorized
 keys live at `/var/lib/pesmarica/.ssh/authorized_keys`, beside the host key and
@@ -336,12 +332,9 @@ is `pesmarica-boot-config`, which `tool/test_boot_config.sh` lifts out of the
 module and runs against fake boot partitions.
 
 **The app has no update path of its own.** It is in the closure, so replacing
-the system replaces it -- `tool/deploy_system.sh` is the only updater. There
-used to be two bundle slots beside the songbook with a pointer and a trial
-counter, plus a `.tar` upload in `/manage` and a `deploy_pi.sh`; all of it was
-a second mechanism doing a subset of what the system slots do, with its own
-on-disk format to keep in step. Do not reintroduce one: a faster Dart loop is
-not worth two updaters that can disagree about which version is running.
+the system replaces it, and `tool/deploy_system.sh` is the only updater. A
+second one existed and was removed: a faster Dart loop is not worth two
+updaters that can disagree about which version is running.
 
 ## Testing
 
