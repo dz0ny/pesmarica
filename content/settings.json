@@ -5,6 +5,6 @@
   "showChrome": true,
   "showTitle": false,
   "rotation": 0,
-  "httpPort": 8080,
+  "httpPort": 80,
   "httpEnabled": true
 }

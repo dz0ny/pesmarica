@@ -280,7 +280,7 @@ country=SI
 or set the same thing from **Omrežje** in the web interface, which writes that
 file for you and moves the radio without a reboot. Leave the passphrase out for
 an open network. Joined, the box has no network of its own and is reached at
-`http://pesmarica.local:8080` on the network it joined.
+`http://pesmarica.local` on the network it joined.
 
 Nothing about this can strand the box. If the network does not hand out an
 address within 45 seconds — wrong passphrase, router replaced, hall with no wifi
@@ -295,8 +295,11 @@ laptop.
 
 ## Web interface
 
-The app serves two pages on port 8080 (`http://192.168.4.1:8080`, or `:8080` on
-whatever address you reach it at).
+The app serves two pages on port 80: `http://192.168.4.1` on the box's own
+access point, or `http://pesmarica.local` on a network it has joined. Port 80
+is what makes a phone open the songbook by itself — a captive-portal check is
+an HTTP request to port 80, and the box answers every name with its own
+address.
 
 ### The remote — `/`
 
@@ -446,7 +449,7 @@ safe to expose to the internet.
   "showChrome": true,     // the number/title strip along the bottom
   "showTitle": true,      // default for pages that do not set showTitle
   "rotation": 0,          // 0 | 90 | 180 | 270, clockwise; restarts the display
-  "httpPort": 8080,
+  "httpPort": 80,
   "httpEnabled": true,
 
   "password": "cebelica"    // hashed into passwordHash/passwordSalt on load,
