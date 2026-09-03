@@ -34,6 +34,7 @@ class StaticAssets {
     'remote.js': 'assets/web/remote.js',
     'manage.js': 'assets/web/manage.js',
     'markdown.js': 'assets/web/markdown.js',
+    'media.js': 'assets/web/media.js',
     'preact.js': 'assets/web/preact.js',
     'login.js': 'assets/web/login.js',
     'favicon.svg': 'assets/web/favicon.svg',
