@@ -116,6 +116,52 @@ void main() {
     expect(onDisk, contains('# Prva'));
   });
 
+  test("the remote's zoom changes the screen and not the card", () async {
+    final source = File(presenter.current!.path).readAsStringSync();
+
+    presenter.nudgeZoom(1);
+    presenter.nudgeZoom(1);
+    expect(presenter.liveScale, closeTo(1.2, 1e-9));
+    expect(presenter.effectiveScale, closeTo(1.2, 1e-9));
+    expect(presenter.current!.scale, 1.0, reason: 'the page is untouched');
+
+    // Longer than the debounce a real scale write would sit behind.
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    expect(File(presenter.current!.path).readAsStringSync(), source);
+  });
+
+  test('the zoom multiplies the page own magnification', () {
+    presenter.goToNumber(2);
+    presenter.nudgeZoom(1);
+    expect(presenter.effectiveScale, closeTo(1.5 * 1.1, 1e-9));
+  });
+
+  test('the zoom goes away with the page it was dialled in for', () {
+    presenter.nudgeZoom(2);
+    expect(presenter.liveScale, closeTo(1.2, 1e-9));
+
+    presenter.next();
+    expect(presenter.liveScale, 1.0);
+    expect(presenter.effectiveScale, closeTo(1.5, 1e-9));
+  });
+
+  test('the zoom returns to exactly one, and stops at the ends', () {
+    for (var i = 0; i < 5; i++) {
+      presenter.nudgeZoom(1);
+    }
+    for (var i = 0; i < 5; i++) {
+      presenter.nudgeZoom(-1);
+    }
+    expect(presenter.liveScale, 1.0);
+
+    for (var i = 0; i < 200; i++) {
+      presenter.nudgeZoom(-1);
+    }
+    expect(presenter.liveScale, SongPage.minScale);
+    presenter.clearLiveZoom();
+    expect(presenter.liveScale, 1.0);
+  });
+
   test('B flips polarity and F walks the bundled fonts', () async {
     final keys = KeyBindings(presenter);
     expect(songbook.settings.theme, PageTheme.dark);

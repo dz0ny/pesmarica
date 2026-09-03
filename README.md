@@ -310,6 +310,13 @@ naslovu** opens the songbook index over it for whoever knows the song by its
 first line. A laptop's own keyboard works too — digits, Enter, Backspace and
 the arrow keys do what they do on the box.
 
+**−** and **+** between them make what is on the wall smaller or larger, and
+the key between the two says how far from the page's own size the room has been
+nudged and taps back to it. That zoom is only for as long as the page is up: it
+is not saved, and the next song comes up at the size it is written at. The size
+kept in the songbook is per page and lives at `/manage`, because it is a change
+to the songbook rather than to what the room is looking at now.
+
 The remote needs no password, on purpose: whoever is in the hall is already
 looking at the words on the wall, and the person free to run the screen on a
 Sunday morning is rarely the person who knows the password. The lamp beside the
@@ -423,12 +430,12 @@ The password guards **editing, not the room**. With one set:
 | --- | --- |
 | The remote and its assets | `/manage` and the editor |
 | `GET /api/remote`, `GET /api/songbook` | `GET /api/state`, `GET /api/pages/<n>` |
-| `POST /api/next`, `/api/prev`, `/api/show/<n>` | everything that writes a page, a setting or a bundle |
+| `POST /api/next`, `/api/prev`, `/api/show/<n>`, `/api/zoom/{in,out,reset}` | everything that writes a page, a setting or a bundle |
 
 Reading is open and writing is not, with one exception in each direction:
-`/manage` reads nothing but is the door to everything, so it asks; and the three
-navigation calls write nothing to the card — they only move the display, which
-is the whole point of the remote. Setting a password used to lock out exactly
+`/manage` reads nothing but is the door to everything, so it asks; and the
+navigation and zoom calls write nothing to the card — they only change what the
+room is looking at, which is the whole point of the remote. Setting a password used to lock out exactly
 the person you wanted driving the screen; now it does not.
 
 Scripts can send the same secret as an `X-Pesmarica-Auth` header instead of a

@@ -19,6 +19,7 @@ class Presenter extends ChangeNotifier {
   String _numberBuffer = '';
   Timer? _numberTimeout;
   bool _helpVisible = false;
+  double _liveScale = 1.0;
   String? _flash;
   Timer? _flashTimer;
 
@@ -27,6 +28,9 @@ class Presenter extends ChangeNotifier {
 
   int get index => _index;
   bool get helpVisible => _helpVisible;
+
+  /// The transient multiplier the remote has dialled in, 1.0 when untouched.
+  double get liveScale => _liveScale;
 
   /// Digits typed so far, empty when no jump is in progress.
   String get numberBuffer => _numberBuffer;
@@ -40,8 +44,10 @@ class Presenter extends ChangeNotifier {
   SongPage? get current =>
       _index >= 0 && _index < pages.length ? pages[_index] : null;
 
-  /// Page magnification times the global multiplier.
-  double get effectiveScale => (current?.scale ?? 1.0) * settings.baseScale;
+  /// Page magnification times the global multiplier times whatever the remote
+  /// has nudged it to for as long as this page is up.
+  double get effectiveScale =>
+      (current?.scale ?? 1.0) * settings.baseScale * _liveScale;
 
   void _onSongbookChanged() {
     // Keep showing the same page number across reloads where we can; the file
@@ -62,8 +68,12 @@ class Presenter extends ChangeNotifier {
   /// wrote to the card every few minutes to record something nobody read.
   void _settle(int index) {
     if (pages.isEmpty) return;
+    final was = current?.path;
     _index = index.clamp(0, pages.length - 1);
     _lastNumber = pages[_index].number;
+    // The live zoom belongs to the page that is up, not to the screen: the
+    // next song was written by somebody else and fits differently.
+    if (pages[_index].path != was) _liveScale = 1.0;
     notifyListeners();
   }
 
@@ -148,11 +158,38 @@ class Presenter extends ChangeNotifier {
     showFlash('Povečava ${(target * 100).round()} %');
   }
 
+  /// Magnifies what is on screen right now and writes nothing.
+  ///
+  /// This is the remote's zoom, and the remote is open to everyone in the
+  /// hall. It may not touch the card for two reasons that happen to agree: an
+  /// unlocked call must not be able to rewrite the songbook, and the display
+  /// path never writes at all -- the box runs off an SD card in a room that
+  /// browns out every winter. The persistent per-page zoom is a different
+  /// thing, lives in the front matter, and is set by a human at /manage.
+  void nudgeZoom(int steps) {
+    if (current == null) return;
+    // Keep the factor on the step grid: a hundred taps of + and - should end
+    // up back at exactly 1.0, not at something that only looks like it.
+    final stepped = ((_liveScale + scaleStep * steps) * 100).roundToDouble() / 100;
+    final target = SongPage.clampScale(stepped);
+    if (target == _liveScale) return;
+    _liveScale = target;
+    showFlash('Povečava ${(effectiveScale * 100).round()} %');
+  }
+
+  /// Drops the transient zoom, leaving the page's own magnification alone.
+  void clearLiveZoom() {
+    if (_liveScale == 1.0) return;
+    _liveScale = 1.0;
+    showFlash('Povečava ${(effectiveScale * 100).round()} %');
+  }
+
   void resetZoom() {
     final page = current;
-    if (page == null || page.scale == 1.0) return;
-    songbook.setScale(page, 1.0);
-    showFlash('Povečava 100 %');
+    if (page == null) return;
+    _liveScale = 1.0;
+    if (page.scale != 1.0) songbook.setScale(page, 1.0);
+    showFlash('Povečava ${(settings.baseScale * 100).round()} %');
   }
 
   Future<void> toggleTheme() async {

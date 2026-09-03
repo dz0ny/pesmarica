@@ -222,6 +222,13 @@ body {
   letter-spacing: .16em; text-transform: uppercase;
 }
 
+/* The zoom sits between the step buttons and the keypad, built out of the same
+   keys, because it is the same kind of act: it changes the wall and nothing
+   else. The middle key says how far from the page's own size the room has been
+   nudged, and taps back to it. */
+.zoom { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px; }
+.zoom .key { min-height: 48px; }
+
 .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .key {
   min-height: 58px;
