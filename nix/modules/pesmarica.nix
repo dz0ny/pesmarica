@@ -343,19 +343,13 @@ in
   # two FAT partitions and is all a clean shutdown would have done for them.
   boot.kernel.sysctl."kernel.sysrq" = 1;
 
-  # The panel is the product, and a congregation should not watch it boot.
-  # Upstream ships loglevel=7 with console=tty1, so every kernel message and
-  # every unit systemd starts scrolls across the screen until flutter-pi takes
-  # it. Errors still reach the serial console for anyone debugging with a
-  # cable; routine progress is gone from both. The screen stays black until
-  # the first frame -- a real splash image is its own piece of work.
-  boot.consoleLogLevel = lib.mkForce 3;
-  boot.initrd.verbose = false;
-  boot.kernelParams = [
-    "quiet"
-    "systemd.show_status=false"
-    "vt.global_cursor_default=0"
-  ];
+  # A quiet boot was the nicer thing to show a congregation, and it cost more
+  # than it was worth: a box that came up and went dark looked exactly like a
+  # box that had failed in the initrd, and with the journal in RAM there was
+  # nothing afterwards to tell the two apart. The screen is the only instrument
+  # this box has, so it says what it is doing again.
+  boot.consoleLogLevel = lib.mkForce 4;
+  boot.kernelParams = [ "vt.global_cursor_default=0" ];
 
   # /run/opengl-driver. flutter-pi links libgbm and libEGL, and since mesa 25
   # both are thin front ends that find the actual driver -- dri_gbm.so and the
@@ -497,6 +491,42 @@ in
       # 512 MB of RAM total, so the log in memory has to be bounded.
       RuntimeMaxUse=16M
     '';
+  };
+
+  # A boot that dies leaves no evidence: the journal is in RAM and goes with
+  # the power. Add `pesmarica.log` to cmdline.txt on the boot partition -- a
+  # card reader and one word -- and the journal is also written to a file on
+  # the songbook partition, which any laptop can then read.
+  #
+  # A file rather than /var/log/journal: the partition is FAT, which carries
+  # neither the permissions nor the ACLs journald wants for a real journal
+  # directory. This is a transcript, and a transcript is what somebody
+  # debugging a dark screen actually reads.
+  #
+  # `journalctl -b` starts from the beginning of this boot, so the unit does
+  # not have to be early to catch early messages -- only early enough to be
+  # reached before whatever goes wrong.
+  systemd.services.pesmarica-boot-log = {
+    description = "Write this boot's journal to the songbook partition";
+    unitConfig = {
+      ConditionKernelCommandLine = "pesmarica.log";
+      RequiresMountsFor = "/var/lib/pesmarica";
+    };
+    after = [ "systemd-journald.service" ];
+    wantedBy = [ "sysinit.target" ];
+    serviceConfig = {
+      Type = "simple";
+      # The boot before this one is kept, and only that one: two boots is what
+      # it takes to compare a failure with the last time it worked, and the
+      # card has no room to collect them.
+      # "-": on a first boot there is no previous log to keep, and a unit that
+      # refused to start for that reason would log nothing precisely when
+      # somebody has just turned logging on.
+      ExecStartPre = "-${pkgs.coreutils}/bin/mv -f /var/lib/pesmarica/boot.log /var/lib/pesmarica/boot.log.1";
+      ExecStart = "${pkgs.systemd}/bin/journalctl -b -f -o short-precise --no-pager";
+      StandardOutput = "truncate:/var/lib/pesmarica/boot.log";
+      Restart = "no";
+    };
   };
   boot.tmp.useTmpfs = true;
 

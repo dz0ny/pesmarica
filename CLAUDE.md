@@ -278,6 +278,16 @@ not any more, and the SSID must not be copied into `settings.json` either.
 to *join*, the app does write it, hostapd never reads it, and a bad name only
 costs the 45-second fallback.
 
+**A boot that fails leaves nothing behind, unless you ask.** The journal is in
+RAM, so a box that goes dark has no evidence to read afterwards -- which is
+why the boot is no longer quiet: the screen is the only instrument the box
+has. For more than that, add `pesmarica.log` to `cmdline.txt` on the boot
+partition with a card reader; `pesmarica-boot-log.service` then writes this
+boot's journal to `boot.log` on the songbook partition, keeping the previous
+one as `boot.log.1`. It is a transcript, not a journal directory: the
+partition is FAT and carries neither the permissions nor the ACLs journald
+wants.
+
 **The board has no clock.** There is no RTC, so the box boots at whatever the
 build stamped and drifts; `date` on a running box is not evidence of anything,
 and file mtimes on the card mean nothing. It bites hardest over HTTPS: a clock
