@@ -59,3 +59,6 @@ nix/.docker/
 
 # Per-machine Claude Code permissions; launch.json beside it is shared.
 .claude/settings.local.json
+
+# Agent worktrees: real git repos, and not part of this one.
+.claude/worktrees/
