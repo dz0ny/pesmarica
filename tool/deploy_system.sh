@@ -46,7 +46,10 @@ esac
 # in colima, in that order of preference -- the first two need no builder.
 PAYLOAD="${PAYLOAD:-}"
 if [ -n "${RELEASE:-}" ]; then
-	dl="$(mktemp -d)"; trap 'rm -rf "$dl"' EXIT
+	# chmod first: the tarball carries the store's modes, so the directories
+	# come out unwritable and rm cannot empty them -- which used to leave the
+	# whole deploy exiting 1 long after it had actually landed.
+	dl="$(mktemp -d)"; trap 'chmod -R u+w "$dl" 2>/dev/null || true; rm -rf "$dl"' EXIT
 	gh release download "$RELEASE" -p "pesmarica-system-$SLOT-*.tar.zst" -D "$dl"
 	mkdir -p "$dl/tree/nixos-$SLOT"
 	zstd -dc "$dl"/pesmarica-system-"$SLOT"-*.tar.zst | tar -C "$dl/tree/nixos-$SLOT" -xf -
@@ -83,7 +86,7 @@ ssh "$HOST" "
 # tar, not rsync: rsync would have to exist on the box, and it does not. tar
 # is in the closure regardless. --no-same-owner/permissions: FAT carries
 # neither, they come from the mount, and tar would fail trying to set them.
-tar -C "$SRC" -cf - . | ssh "$HOST" "tar -C $FIRMWARE/nixos-$SLOT/default -xf - --no-same-owner --no-same-permissions"
+tar -C "$SRC" --no-xattrs -cf - . | ssh "$HOST" "tar -C $FIRMWARE/nixos-$SLOT/default -xf - --no-same-owner --no-same-permissions"
 
 # The marker goes last, so a cut-short transfer leaves an unusable slot rather
 # than a plausible one. system_switch.sh refuses without it.
