@@ -49,8 +49,6 @@ lib/
   src/data/songbook.dart     the folder: load, watch, write, import
   src/data/presenter.dart    what is on screen; keypad buffer; toggles
   src/input/key_bindings.dart key event -> presenter action
-  src/update/bundle_slots.dart   the two app slots: format, staging, commit
-  src/update/bundle_installer.dart an uploaded .tar -> the slot that is idle
   src/ui/                    presenter screen, page rendering, overlays
   src/web/admin_server.dart  shelf routes, cookie auth, the open/gated split
   src/web/static_assets.dart serves the web files out of the Flutter bundle
@@ -312,8 +310,7 @@ a stale size.
 ## The appliance
 
 `nix/` is a NixOS flake and the single definition of the system: the units, the
-access point, the partitions, the paths. `tool/deploy_pi.sh` only pushes a build
-onto a box that already runs the image — if you find yourself wanting to install
+access point, the partitions, the paths. If you find yourself wanting to install
 a unit from the repo, change the image instead. When the image itself is what
 changed, `tool/deploy_system.sh` pushes a slot (`RELEASE=vN`, or `make system
 SLOT=b`) onto a running box rather than reflashing a card. It writes the free
@@ -335,27 +332,23 @@ The image cannot be built or booted from a test run here; it needs an aarch64
 Linux builder and a real Zero 2 W. Treat changes under `nix/` as unverified
 until someone flashes a card, and say so. CI builds it on Linux runners, which
 is the fastest way to find out whether a change even compiles. The one exception
-is the launch script, which `tool/test_launcher.sh` lifts out of the module and
-runs against stub bundles — so its slot picking *is* covered.
+is `pesmarica-boot-config`, which `tool/test_boot_config.sh` lifts out of the
+module and runs against fake boot partitions.
 
-**App updates are A/B, and the launcher owns the recovery half.** Two slots
-beside the songbook, a pointer file, and a trial counter; the format is
-documented once, in `lib/src/update/bundle_slots.dart`, and read from two
-places: that class (staging, committing, clearing the trial) and the launch
-script in `nix/modules/pesmarica.nix` (picking a slot, counting failed starts,
-reverting). The split is deliberate — the launcher is what still runs when the
-deployed bundle cannot, so anything that has to work when the app is broken
-belongs there and nowhere else. Change the format and you change both, plus
-`tool/deploy_pi.sh`, which writes it over ssh.
+**The app has no update path of its own.** It is in the closure, so replacing
+the system replaces it -- `tool/deploy_system.sh` is the only updater. There
+used to be two bundle slots beside the songbook with a pointer and a trial
+counter, plus a `.tar` upload in `/manage` and a `deploy_pi.sh`; all of it was
+a second mechanism doing a subset of what the system slots do, with its own
+on-disk format to keep in step. Do not reintroduce one: a faster Dart loop is
+not worth two updaters that can disagree about which version is running.
 
 ## Testing
 
 `test/front_matter_test.dart` and `test/presenter_test.dart` are plain `test()`
 over a temp songbook — fast, and where most logic belongs.
 `test/render_test.dart` and `test/title_test.dart` are widget tests over a real
-`PresenterScreen`. `test/bundle_slots_test.dart` covers the update slots, and
-`tool/test_launcher.sh` covers the rollback side of them in shell.
-`tool/test_system_switch.sh` does the same for system updates: it runs
+`PresenterScreen`. `tool/test_system_switch.sh` covers system updates: it runs
 `tool/system_switch.sh` against fake boot partitions, and every refusal it pins
 is a card reader trip that did not happen.
 `test/network_api_test.dart` pins what the web interface may write to the boot

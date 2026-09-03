@@ -6,10 +6,9 @@
 #   HOST=root@pesmarica.local RELEASE=v7 ./tool/deploy_system.sh # from a release
 #   HOST=... PAYLOAD=/path/to/firmware-b ./tool/deploy_system.sh # a tree you have
 #
-# This is the heavier sibling of deploy_pi.sh: that one pushes the Flutter
-# bundle, this one the kernel, the initrd and the whole closure as one
-# squashfs. Expect minutes, not seconds -- it is half a gigabyte over the
-# box's own 2.4 GHz access point onto an SD card.
+# This is how the box is updated at all: the app is in the closure, so there
+# is nothing smaller to push. Expect minutes, not seconds -- half a gigabyte
+# over the box's own 2.4 GHz access point onto an SD card.
 #
 # The boot partition has two slots, nixos-a and nixos-b, and a system is built
 # for one of them: its fstab names its own slot, and config.txt's os_prefix

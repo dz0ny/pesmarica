@@ -7,7 +7,6 @@ import 'src/data/boot_config.dart';
 import 'src/data/presenter.dart';
 import 'src/data/songbook.dart';
 import 'src/ui/presenter_screen.dart';
-import 'src/update/bundle_slots.dart';
 import 'src/web/admin_server.dart';
 
 /// Where the songbook lives.
@@ -49,14 +48,6 @@ Future<void> main() async {
   await admin.start();
 
   runApp(PesmaricaApp(presenter: presenter, admin: admin));
-
-  // A freshly installed bundle is on trial until it puts a page on the screen:
-  // the launcher counts the starts that never got this far and reverts to the
-  // previous slot. Waiting for the first frame rather than reporting success
-  // here means an app that dies while rendering is caught too.
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    BundleSlots(songbook.root).markCurrentGood();
-  });
 }
 
 class PesmaricaApp extends StatefulWidget {

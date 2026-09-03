@@ -9,7 +9,7 @@
 #
 #   ./tool/test_boot_config.sh
 #
-# Same textual coupling as test_launcher.sh: it reads the block between the
+# Textual coupling, like test_system_switch.sh: it reads the block between the
 # `writeShellApplication` name line and the end of its `text`. If that is
 # reworded, reword it here too -- the script says so rather than silently
 # testing nothing.
