@@ -19,39 +19,31 @@ let
 
   apAddress = "192.168.4.1";
 
-  # The three plugins this box actually loads, lifted out of two packages that
-  # would otherwise come whole. flutter-pi's pipeline is
+  # What gstreamer loads at runtime, as against what flutter-pi links against.
+  # flutter-pi's pipeline is
   #
   #   uridecodebin ! video/x-raw ! appsink
   #
-  # so what it needs beyond core and base is the mp4 demuxer, the H.264 parser
-  # that turns what qtdemux emits into the byte stream the decoder takes, and
-  # the v4l2 decoder that is the Pi's own H.264 block. Nothing else in those
-  # packages is ever asked for -- but taking them whole put GTK, PulseAudio and
-  # OpenAL in the closure, 254 MB of software this box cannot use, for three
-  # shared objects. Copying the objects works because nix reads references out
-  # of the file: the closure comes out as what the plugin links, not as what
-  # its package was built beside.
+  # so beyond core and base it needs the mp4 demuxer, the H.264 parser that
+  # turns what qtdemux emits into the byte stream the decoder takes, and the
+  # v4l2 decoder that is the Pi's own H.264 block.
   #
-  # A missing name fails the build rather than the box, which is the point:
-  # a plugin that is quietly not there is a video page that is quietly black.
-  gstExtraPlugins = pkgs.runCommand "pesmarica-gst-plugins" { } ''
-    mkdir -p $out/lib/gstreamer-1.0
-    for so in \
-      ${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/libgstisomp4.so \
-      ${pkgs.gst_all_1.gst-plugins-good}/lib/gstreamer-1.0/libgstvideo4linux2.so \
-      ${pkgs.gst_all_1.gst-plugins-bad}/lib/gstreamer-1.0/libgstvideoparsersbad.so
-    do
-      cp "$so" $out/lib/gstreamer-1.0/
-    done
-  '';
-
-  # No audio anywhere: the pipeline above ends at a video sink, so a stream the
-  # box cannot decode is a stream nothing was going to play. That is what lets
-  # gst-libav, and ffmpeg behind it, stay out of the closure entirely.
+  # Those three objects arrive inside two packages that between them put GTK,
+  # PulseAudio, OpenAL and libcamera in the closure -- most of the 254 MB video
+  # costs. Copying just the three .so files out does *not* avoid that: each one
+  # links its own package's helper libraries (libgstcodecparsers and friends),
+  # so nix reads the reference and pulls the package back whole. Measured: it
+  # saved 0.1 MB. Getting that space back means building these two packages
+  # with their optional plugins disabled, which is a source build of each on
+  # every nixpkgs bump -- the mesa tax again, and not yet paid.
+  #
+  # No gst-libav, though. That pipeline ends at a video sink, so a stream the
+  # box cannot decode is a stream nothing was going to play, and ffmpeg leaves
+  # the closure entirely. It follows that video here has no sound at all.
   gstPlugins = [
-    gstExtraPlugins
+    pkgs.gst_all_1.gst-plugins-bad
     pkgs.gst_all_1.gst-plugins-base
+    pkgs.gst_all_1.gst-plugins-good
     pkgs.gst_all_1.gstreamer
   ];
   gstPluginPath = lib.concatMapStringsSep ":" (p: "${p}/lib/gstreamer-1.0") gstPlugins;

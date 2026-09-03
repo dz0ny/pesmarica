@@ -322,11 +322,14 @@ H.265 at any useful size, and a file that plays on a laptop proves nothing.
 The controller lives in `_VideoStage` and dies with the widget, so a slideshow
 disposes each pipeline instead of leaving it decoding behind the next picture.
 There is no sound, and no way to add one by changing the app: flutter-pi's
-pipeline is `uridecodebin ! video/x-raw ! appsink`, and the closure carries
-three cherry-picked plugin objects -- the mp4 demuxer, the H.264 parser and the
-v4l2 decoder -- rather than the packages they come in. Taking those packages
-whole cost 254 MB of GTK, PulseAudio and OpenAL for three shared objects.
-Wanting audio means putting a decoder back and paying for it.
+pipeline is `uridecodebin ! video/x-raw ! appsink`, which ends at a video sink,
+so no audio decoder is in the closure. Video costs 254 MB of squashfs, nearly
+all of it GTK, PulseAudio, OpenAL and libcamera arriving inside
+gst-plugins-good and gst-plugins-bad for three shared objects. Copying the
+three objects out does not help: each links its own package's helper libraries,
+so nix pulls the package back whole -- measured at 0.1 MB saved. The space is
+recoverable only by building those two packages with their optional plugins
+off, on every nixpkgs bump.
 
 **`AutoFit` converges over frames, not in one pass.** Markdown reflows as the
 font size changes, so it measures, shrinks and re-measures, holding the child at
