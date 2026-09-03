@@ -53,8 +53,14 @@ lib/
   src/web/admin_server.dart  shelf routes, cookie auth, the open/gated split
   src/web/static_assets.dart serves the web files out of the Flutter bundle
   src/web/credentials.dart   salt, hash, constant-time compare
+  src/update/update_status.dart reads what the update checker left in /run
 assets/web/                  the two pages: remote (/) and manage (/manage)
 nix/                         the appliance image (flake, module, Makefile)
+nix/scripts/                 shell that runs *on the box*, so the image can
+                             install it: the launcher, the update checker,
+                             system_switch.sh
+tool/                        shell that runs *here*: deploy, and the tests
+                             that exercise nix/scripts against fake trees
 ```
 
 `Songbook` and `Presenter` are plain `ChangeNotifier`s wired up by hand in
@@ -248,16 +254,12 @@ with no X server, drags gtk3, cups, avahi and at-spi2 in behind it -- some
 `libgbm` and `libEGL`, which since mesa 25 are front ends that find `dri_gbm.so`
 and the EGL vendor file through that path alone. `hardware.graphics.enable` is
 what creates it; without it flutter-pi reports "Could not create GBM device" on
-a working `/dev/dri/card0`. The mesa behind it is overridden down to
-`v3d` and `vc4` with no Vulkan drivers, because stock mesa's `llvmpipe` pulls
-in 591 MB of LLVM -- a third of the closure -- for a software rasteriser this
-box can never use. That override is why mesa builds from source in CI instead
-of coming from the cache, and adding a driver back means paying that build
-again. Dropping drivers costs two workarounds: `gallium-va` has to
-be disabled by hand, because nixpkgs' meson hook sets `auto_features=enabled`
-and the VA-API tracker then demands a driver that is gone; and mesa's
-`spirv2dxil` output has to be created empty, because it declares that output
-unconditionally while only the WSL driver fills it.
+a working `/dev/dri/card0`. Mesa is cut down to `v3d` and `vc4` with no Vulkan:
+stock `llvmpipe` drags in 591 MB of LLVM, a third of the closure, for a
+software rasteriser this box can never use. The cost is that mesa builds from
+source in CI, plus two workarounds the comments in `pesmarica.nix` explain —
+`gallium-va` disabled by hand, and an empty `spirv2dxil` output. Adding a
+driver back means paying that build again.
 
 **`environment.defaultPackages` is empty, so a deploy may only use what the
 closure already carries.** The deploy used to push with rsync, which emptying
@@ -281,17 +283,13 @@ and a half while sshd waits on a reverse lookup the box cannot do.
 
 **The access point is the only way into the box, and the app no longer touches
 it.** `hostapd.conf` lives on the data partition beside the songbook, which is
-FAT32 precisely so it can be edited with the card in a laptop -- and it now
-ships in the image, so the network the box hands out can be renamed before it
-is ever powered on. A config hostapd
-rejects is a brick, recoverable only by the `ap-preflight` fallback in the image
-or a serial console, so nothing in the app may write that file — the web
-interface used to and does not any more. Do not add a copy of the SSID to
-`settings.json` either. `wifi.conf` on the boot partition is a different file
-with the opposite rule: it says which network to *join*, the app does write it,
-and hostapd never reads it -- a name typed into a phone can leave the box
-looking for a network that is not there, which the fallback undoes, but it can
-never leave hostapd unable to start.
+FAT32 precisely so a laptop can edit it, and it ships in the image so the
+network can be renamed before first power-on. A config hostapd rejects is a
+brick, so nothing in the app may write it — the web interface used to and does
+not any more, and the SSID must not be copied into `settings.json` either.
+`wifi.conf` on the boot partition is the opposite file: it says which network
+to *join*, the app does write it, hostapd never reads it, and a bad name only
+costs the 45-second fallback.
 
 **Never write a password anywhere.** `Songbook._adoptPassword` hashes a
 plaintext `password:` out of `settings.json` on load and rewrites the file
@@ -313,9 +311,12 @@ a stale size.
 - The display uses exactly two colours plus one muted tone, from
   `PagePalette`. Do not introduce accent colours or Material theming into the
   presentation path.
-- Nothing is fetched at runtime. Fonts are bundled assets and the admin UI is
-  one dependency-free HTML string, because the box is often offline and a build
-  step for the admin UI is one more thing to be broken on a Sunday morning.
+- Nothing is fetched at runtime, with one exception. Fonts are bundled assets
+  and the admin UI is dependency-free, because the box is often offline and a
+  build step for it is one more thing to be broken on a Sunday morning. The
+  exception is the update checker, which is off by default, asks the routing
+  table before it asks the network, and is the only thing here allowed to
+  reach the internet.
 - Comments explain why, not what. Match the density already in the files.
 
 ## The appliance
@@ -357,6 +358,15 @@ status file that leaves in tmpfs and starts one unit when the operator presses
 the button; it never downloads, never switches and never reboots. Off unless
 `autoUpdate` in `settings.json` says otherwise, which the shell reads with jq
 the same way the launcher reads `rotation`.
+
+**The box can fetch its own updates, and must never install one by itself.**
+`nix/scripts/update_check.sh` runs hourly *only* when `autoUpdate` is on in
+`settings.json` and `ip route show default` says there is an uplink — the box
+is normally its own access point, so most runs end in the first twenty lines.
+It fills the slot the box is *not* running and writes `/run/pesmarica/update.json`.
+It never switches and never reboots: there is no rollback, so one bad release
+would take out every online box at once, and the decision belongs to whoever
+can see the screen. `/manage` offers **Namesti**; that is the only path.
 
 **The switch is one script, run three ways.** `nix/scripts/system_switch.sh` is
 piped over ssh by `tool/deploy_system.sh`, installed in the image as
