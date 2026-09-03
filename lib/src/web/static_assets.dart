@@ -32,6 +32,7 @@ class StaticAssets {
     'app.css': 'assets/web/app.css',
     'common.js': 'assets/web/common.js',
     'remote.js': 'assets/web/remote.js',
+    'icons.js': 'assets/web/icons.js',
     'manage.js': 'assets/web/manage.js',
     'markdown.js': 'assets/web/markdown.js',
     'media.js': 'assets/web/media.js',

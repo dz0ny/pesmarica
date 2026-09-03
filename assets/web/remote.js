@@ -14,6 +14,7 @@
 // over the top when somebody knows the song by its first line instead.
 
 import { html, render, useEffect, useRef, useState } from '/static/preact.js';
+import { SquarePen } from '/static/icons.js';
 import { api, flipSkin, skin } from '/static/common.js';
 
 const POLL = 3000;
@@ -140,7 +141,11 @@ function Remote() {
       <button class="link" onClick=${() => setLight(flipSkin() === 'light')}>
         ${light ? 'Temno' : 'Svetlo'}
       </button>
-      <a class="link" href="/manage">Uredi</a>
+      <a
+        class="link icon-link"
+        href=${'/manage' + (now.current == null ? '' : '#' + now.current)}
+        title="Uredi to stran"
+      ><${SquarePen} label="Uredi to stran" /></a>
     </header>
 
     <main class="remote">

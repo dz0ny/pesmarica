@@ -6,6 +6,7 @@
 
 import { html, render, useEffect, useLayoutEffect, useRef, useState } from '/static/preact.js';
 import { convertImage, inspectVideo, isImageFile, isVideoFile } from '/static/media.js';
+import { Settings as SettingsIcon } from '/static/icons.js';
 import { api, flipSkin, json, skin } from '/static/common.js';
 import { previewHtml } from '/static/markdown.js';
 
@@ -101,6 +102,7 @@ function Manage() {
   const menu = useRef(null);
   const sheetSettings = useRef(null);
   const network = useRef(null);
+  const device = useRef(null);
   const updates = useRef(null);
 
   // What wifi.conf on the boot partition says. Fetched when the dialog is
@@ -301,6 +303,22 @@ function Manage() {
     end: start + 2,
   }));
 
+  // The remote's edit button links to /manage#<number>, so arriving from a
+  // screen that was showing page 12 opens page 12 rather than an empty editor.
+  // Once, and only when the songbook is actually there to open from: the poll
+  // above fills it in a moment after mount.
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (arrived.current || !state.pages.length) return;
+    arrived.current = true;
+    const asked = location.hash.slice(1);
+    // An empty hash is Number('') === 0, which would go looking for page zero.
+    if (!/^\d+$/.test(asked)) return;
+    const wanted = Number(asked);
+    if (state.pages.some((page) => page.number === wanted)) open(wanted);
+    else say('Strani ' + wanted + ' ni več.', true);
+  }, [state.pages]);
+
   useEffect(() => {
     const onKey = (e) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -485,9 +503,17 @@ function Manage() {
     action();
   };
 
-  // The one thing about an update that belongs in the chrome rather than behind
-  // a menu: a release sitting in the free slot, waiting for somebody to say
-  // when. Everything else is a line in the dialog.
+  /// The same, for the cog on a desktop. Separate dialog, same rule: get out of
+  /// the way before opening what was asked for.
+  const cog = (action) => {
+    device.current.close();
+    action();
+  };
+
+  // A release sitting in the free slot, waiting for somebody to say when. It
+  // is the one thing behind the cog that has to show through it -- as a dot,
+  // not a word: nobody should have to open a menu to find out there is
+  // something to open it for, and it is not urgent enough to interrupt.
   const ready = !!(state.update && state.update.state === 'ready');
 
   const onSheet = state.pages.find((page) => page.number === editing);
@@ -518,11 +544,13 @@ function Manage() {
           : html`<span class="n">${editing}</span> ${title}`}
       </span>
       <span class="grow"></span>
-      ${ready && html`<button class="quiet on-desk" onClick=${openUpdates}>Posodobitev</button>`}
-      <button class="quiet on-desk" onClick=${openSettings}>Nastavitve</button>
       <button class="link on-desk" onClick=${flip}>${light ? 'Temno' : 'Svetlo'}</button>
       <a class="link on-desk" href="/">Daljinec</a>
-      ${state.protected && html`<button class="quiet on-desk" onClick=${lock}>Zakleni</button>`}
+      <button
+        class=${'link icon-link on-desk' + (ready ? ' flagged' : '')}
+        onClick=${() => device.current.showModal()}
+        title=${ready ? 'Naprava — posodobitev je pripravljena' : 'Naprava'}
+      ><${SettingsIcon} label="Naprava" /></button>
       <button class="on-phone more" onClick=${() => menu.current.showModal()}
         title="Več">•••</button>
     </header>
@@ -684,6 +712,17 @@ function Manage() {
       <a class="row-link" href="/">Nazaj na daljinec</a>
       ${state.protected && html`<button onClick=${() => act(lock)}>Zakleni urejanje</button>`}
       <menu><button class="primary" onClick=${() => menu.current.close()}>Zapri</button></menu>
+    </dialog>
+
+    <dialog class="menu" ref=${device}>
+      <h2>Naprava</h2>
+      <button onClick=${() => cog(openSettings)}>Nastavitve zaslona</button>
+      <button onClick=${() => cog(openNetwork)}>Omrežje</button>
+      <button onClick=${() => cog(openUpdates)}>
+        ${ready ? 'Posodobitev je pripravljena' : 'Posodobitev'}
+      </button>
+      ${state.protected && html`<button onClick=${() => cog(lock)}>Zakleni urejanje</button>`}
+      <menu><button class="primary" onClick=${() => device.current.close()}>Zapri</button></menu>
     </dialog>
 
     <dialog class="finder" ref=${chooser}>

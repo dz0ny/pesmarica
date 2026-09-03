@@ -135,6 +135,23 @@ body {
 }
 .link:hover { color: var(--chalk); border-color: var(--muted); }
 
+/* A link whose label is an icon. The pill keeps the same height as a worded
+   one beside it, so the header does not go ragged, and the icon inherits
+   colour from .link -- which is what makes it follow the skin. */
+.icon-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 7px 10px;
+}
+
+/* The one thing the cog says without being opened: a release is downloaded and
+   waiting for somebody to press Namesti. A dot rather than a word, because the
+   chrome has no room for a sentence and this is not urgent -- it waits. */
+.icon-link.flagged { position: relative; color: var(--chalk); }
+.icon-link.flagged::after {
+  content: ''; position: absolute; top: 5px; right: 6px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--chalk);
+}
+
 /* --- The remote --------------------------------------------------------- */
 
 /* One column, always. The remote is held, not read: everything on it should be
