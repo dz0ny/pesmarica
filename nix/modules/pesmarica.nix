@@ -19,25 +19,15 @@ let
 
   apAddress = "192.168.4.1";
 
-  # The image defines the system, so the unit runs the bundle from the store
-  # until something is deployed. tool/deploy_pi.sh and the web interface fill
-  # one of two slots beside the songbook and flip a pointer at it; empty the
-  # directory to go back to the image's own bundle.
-  slots = "/var/lib/pesmarica/bundles";
-
-  # How many starts a freshly deployed bundle gets to reach its first frame
-  # before this reverts to the one that was running before. Keep in step with
-  # BundleSlots.trialAttempts in lib/src/update/bundle_slots.dart.
-  trialAttempts = 3;
-
   # flutter-pi takes the rotation as a startup flag, so it is read here rather
   # than by the app: the web interface writes it into settings.json and restarts
   # the unit. A panel mounted sideways is the normal case for signage.
   #
-  # This script is also the half of the A/B updater that has to survive a bundle
-  # too broken to start, which is why the slot bookkeeping is here in shell and
-  # not in the app: it still runs when nothing else does. The on-disk format it
-  # reads is documented once, in lib/src/update/bundle_slots.dart.
+  # The app comes from the closure and nowhere else. There used to be two
+  # bundle slots beside the songbook with a pointer and a trial counter, a
+  # second updater doing a subset of what the system slots do -- and the app is
+  # in the system, so replacing the system replaces it. One mechanism, one
+  # format, and nothing on the card to get out of step with the closure.
   launch = pkgs.writeShellScript "pesmarica-launch" ''
     settings=/var/lib/pesmarica/settings.json
     rotation=0
@@ -57,70 +47,6 @@ let
       *) echo "pesmarica: ignoring rotation $rotation" >&2; rotation=0 ;;
     esac
 
-    # A bundle is the three files flutter-pi will not start without, plus the
-    # marker a deploy writes last. Half an upload has no marker.
-    complete() {
-      [ -f "$1/.complete" ] || return 1
-      for f in app.so icudtl.dat libflutter_engine.so; do
-        [ -f "$1/$f" ] || return 1
-      done
-      return 0
-    }
-
-    # Renamed into place, like every other write in this project: a pointer
-    # truncated by a power cut would send the next boot to a slot nobody chose.
-    point_at() {
-      printf '%s\n' "$1" > "${slots}/active.tmp" 2>/dev/null &&
-        ${pkgs.coreutils}/bin/mv "${slots}/active.tmp" "${slots}/active" 2>/dev/null
-    }
-
-    forget_trial() {
-      ${pkgs.coreutils}/bin/rm -f "${slots}/trial"
-    }
-
-    # Nothing here goes through the ambient PATH. This script is what runs when
-    # the deployed app cannot, so it may not depend on anything but the store.
-    active=a
-    if [ -r "${slots}/active" ]; then
-      read -r active < "${slots}/active" || true
-    fi
-    active=''${active//[[:space:]]/}
-    case "$active" in a|b) ;; *) active=a ;; esac
-    if [ "$active" = a ]; then other=b; else other=a; fi
-
-    # The trial file exists only between a deploy and the first frame the new
-    # bundle draws, so in steady state a boot writes nothing to the card here.
-    if [ -f "${slots}/trial" ]; then
-      n=""
-      read -r n < "${slots}/trial" || true
-      n=''${n//[[:space:]]/}
-      case "$n" in ""|*[!0-9]*) n=0 ;; esac
-      if [ "$n" -ge ${toString trialAttempts} ]; then
-        echo "pesmarica: slot $active did not come up in $n starts, reverting to $other" >&2
-        forget_trial
-        point_at "$other"
-        tmp=$active; active=$other; other=$tmp
-      else
-        printf '%s\n' "$((n + 1))" > "${slots}/trial"
-      fi
-    fi
-
-    if ! complete "${slots}/$active" && complete "${slots}/$other"; then
-      echo "pesmarica: slot $active is not a bundle, running $other" >&2
-      forget_trial
-      point_at "$other"
-      tmp=$active; active=$other; other=$tmp
-    fi
-
-    if complete "${slots}/$active"; then
-      echo "pesmarica: running slot $active" >&2
-      exec ${lib.getExe flutter-pi} --release --rotation "$rotation" "${slots}/$active"
-    fi
-
-    # Nothing deployed, or both slots unusable. The image's own bundle is in the
-    # read-only store, so this is the one copy a bad update cannot reach.
-    forget_trial
-    echo "pesmarica: no deployed bundle, running the image's own" >&2
     exec ${lib.getExe flutter-pi} --release --rotation "$rotation" ${bundle}
   '';
 
@@ -978,9 +904,6 @@ in
     # mount's umask covers it instead. The image ships this file already; the
     # rule is what puts it back if it is deleted from a laptop.
     "C /var/lib/pesmarica/hostapd.conf - - - - ${defaultHostapdConf}"
-    # The two app slots. Deploys fill them; the launcher above picks between
-    # them. Empty on a fresh card, which is how the image's own bundle runs.
-    "d ${slots} - - - -"
   ];
 
   # tty1 belongs to flutter-pi. Both names: getty@tty1 is what the getty

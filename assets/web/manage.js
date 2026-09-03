@@ -16,18 +16,6 @@ const MOST_ROWS = 120;
 const isMarkdown = (file) => /\.(md|markdown|txt)$/i.test(file.name);
 const isImage = (file) => file.type.startsWith('image/');
 
-/// Which of the two bundles the box is running, and whether it is still on
-/// trial -- the operator should be able to tell a finished update from one that
-/// is about to be rolled back.
-function version(update) {
-  if (!update) return '';
-  const running = (update.slots || []).find((s) => s.slot === update.active);
-  const name = (running && running.version) || update.active;
-  return update.onTrial
-    ? 'različica ' + name + ' · na preizkusu'
-    : 'različica ' + name;
-}
-
 /// The songbook list. It is the sidebar on a laptop and a modal on a phone,
 /// where a permanent list would leave the editor a slot too small to write in.
 function PageList({ pages, find, setFind, editing, live, onPick, onCreate }) {
@@ -90,7 +78,6 @@ function Manage() {
   const chooser = useRef(null);
   const menu = useRef(null);
   const sheetSettings = useRef(null);
-  const bundlePicker = useRef(null);
   const network = useRef(null);
 
   // What wifi.conf on the boot partition says. Fetched when the dialog is
@@ -340,23 +327,6 @@ function Manage() {
     }
   };
 
-  // --- Posodobitev --------------------------------------------------------
-  // The new bundle goes into the slot that is not running, so the upload itself
-  // changes nothing; the box only switches when it restarts at the end. If the
-  // new version does not come up, the box reverts to this one on its own.
-
-  const install = async (file) => {
-    if (!confirm('Namestim ' + file.name + '? Zaslon se bo znova zagnal.')) return;
-    say('Nalagam ' + file.name + ' — ne izklapljaj naprave.');
-    try {
-      const name = file.name.replace(/\.(tar\.gz|tgz|tar)$/i, '');
-      await api('/api/update?version=' + encodeURIComponent(name), {
-        method: 'POST', body: file,
-      });
-      say('Nameščeno. Zaslon se zaganja z novo različico.');
-    } catch (e) { say('Posodobitev: ' + e.message, true); }
-  };
-
   // --- Drag and drop ------------------------------------------------------
   // Markdown dropped on the list becomes new pages; images dropped on the
   // editor are uploaded and referenced at the cursor. A drop anywhere else
@@ -482,7 +452,6 @@ function Manage() {
           : html`<span class="n">${editing}</span> ${title}`}
       </span>
       <span class="grow"></span>
-      <span class="stencil on-desk">${version(state.update)}</span>
       <button class="quiet on-desk" onClick=${openSettings}>Nastavitve</button>
       <button class="link on-desk" onClick=${flip}>${light ? 'Temno' : 'Svetlo'}</button>
       <a class="link on-desk" href="/">Daljinec</a>
@@ -561,13 +530,6 @@ function Manage() {
 
     <input ref=${imagePicker} type="file" accept="image/*" multiple hidden
       onChange=${async (e) => { await insertImages(Array.from(e.target.files)); e.target.value = ''; }} />
-    <input ref=${bundlePicker} type="file" hidden
-      accept=".tar,.gz,.tgz,application/x-tar,application/gzip"
-      onChange=${async (e) => {
-        const file = e.target.files[0];
-        e.target.value = '';
-        if (file) await install(file);
-      }} />
 
     <dialog ref=${sheetSettings}>
       <h2>Nastavitve strani ${editing ?? ''}</h2>
@@ -638,7 +600,6 @@ function Manage() {
       </button>
       <a class="row-link" href="/">Nazaj na daljinec</a>
       ${state.protected && html`<button onClick=${() => act(lock)}>Zakleni urejanje</button>`}
-      <span class="stencil">${version(state.update)}</span>
       <menu><button class="primary" onClick=${() => menu.current.close()}>Zapri</button></menu>
     </dialog>
 
@@ -679,12 +640,8 @@ function Manage() {
         <span>Naslovi na zaslonu</span>
       </label>
 
-      <p class="warn">
-        Zasuk znova zažene zaslon. Posodobitev zamenja program, ki ga naprava
-        poganja — če se nova različica ne zažene, se naprava sama vrne na to.
-      </p>
+      <p class="warn">Zasuk znova zažene zaslon.</p>
       <menu>
-        <button onClick=${() => bundlePicker.current.click()}>Posodobi program</button>
         <button class="primary" onClick=${() => settings.current.close()}>Zapri</button>
       </menu>
     </dialog>

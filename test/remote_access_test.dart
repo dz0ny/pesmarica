@@ -85,7 +85,6 @@ void main() {
     expect((await call('DELETE', '/api/pages/1')).statusCode, 401);
     expect((await call('POST', '/api/pages')).statusCode, 401);
     expect((await call('PUT', '/api/settings')).statusCode, 401);
-    expect((await call('POST', '/api/update')).statusCode, 401);
     expect((await call('POST', '/api/images?name=a.png')).statusCode, 401);
     // The radio is the way into the room. Reading which network the box is on
     // is as gated as changing it: an ssid is a small thing to hand out, but it

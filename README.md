@@ -135,64 +135,14 @@ local build compiles only flutter-pi. See [nix/README.md](nix/README.md) for
 the prerequisites and what the image contains. Between reflashes, push a new build onto a running box:
 
 ```bash
-HOST=root@pesmarica.local ./tool/deploy_pi.sh
-```
-
-That syncs the songbook to `/var/lib/pesmarica` (without `--delete`, so pages
-created through the web interface survive) and the app into whichever update
-slot is not running, then restarts onto it. It installs nothing.
-
-When the system itself is what changed -- the kernel, a unit, anything in
-`nix/` -- there is a heavier sibling that saves the trip for the card reader:
-
-```bash
 HOST=root@pesmarica.local RELEASE=v7 ./tool/deploy_system.sh
 ```
 
-The boot partition has two slots; the box says which it is running, the deploy
-fills the other from the release and points the firmware at it. The previous
-system stays whole in its slot. Expect minutes, not seconds -- it is the whole
-closure over the box's own access point -- and note that it does not replace
-the Pi's own firmware, which still wants a reflash on the rare occasion it
-changes.
-
-### Updates are A/B
-
-The box keeps two copies of the app, `bundles/a` and `bundles/b` beside the
-songbook, and a one-byte pointer at the one it runs -- the scheme a browser uses
-to update itself. A deploy fills the copy that is *not* running and flips the
-pointer last, so an update interrupted by a power cut leaves the box on the
-version it was already running.
-
-A freshly installed version is then **on trial**: if it fails to draw a frame
-three starts running, the box points itself back at the previous copy on its
-own. If both copies are unusable it falls back to the bundle inside the image
-itself, which lives in the read-only Nix store and is the one copy a bad update
-cannot reach. The web interface shows the running version, and says so while it
-is still on trial.
-
-Updating without a laptop works too: **Posodobi** in the web interface takes a
-`.tar` (or `.tar.gz`) of a built bundle and installs it the same way. That
-button only works once a password is set -- everything else in the interface
-edits pages, but this one replaces the program the box runs, and an appliance
-whose interface is open to everyone on the access point should not hand that
-out. Set a password in `settings.json` first (see below).
-
-Every published release carries a `pesmarica-bundle-<version>.tar.gz` next to
-the card image, which is the file that button wants: download it, join the
-box's access point, and hand it over. Reflashing a card is how you install the
-appliance; this is how you update one that is already on a wall. The version the
-interface shows comes from inside the archive, so renaming the download does not
-rename the build.
-
-To run it on a desktop instead:
-
-```bash
-PESMARICA_CONTENT=$PWD/content flutter run -d macos   # or -d linux
-```
-
-`PESMARICA_CONTENT` picks the songbook folder; without it Pesmarica uses
-`./content` next to the working directory.
+The app lives inside the system image, so there is one thing to update and one
+way to do it. The boot partition has two slots; the box says which it is
+running, the deploy fills the other from the release and points the firmware at
+it. The previous system stays whole in its slot, and rollback is a card reader
+and one line of `config.txt`.
 
 ## First Run
 
@@ -530,7 +480,7 @@ preconfiguration. Both are lifted out of `nix/modules/pesmarica.nix` and run
 against stub files, so neither needs a Pi:
 
 ```bash
-./tool/test_launcher.sh && ./tool/test_boot_config.sh
+./tool/test_system_switch.sh && ./tool/test_boot_config.sh
 ```
 
 The web interface is served from `assets/web/` through the Flutter asset bundle,
