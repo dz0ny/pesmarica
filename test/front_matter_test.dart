@@ -91,6 +91,26 @@ void main() {
       expect(page.images, <String>['a.jpg', 'b.png']);
     });
 
+    test('a video is written as an image and known by its extension', () {
+      final page = SongPage.parse(
+        '/x/012-video.md',
+        '---\ntitle: Klip\n---\n\n![](klip.MP4)\n',
+        number: 12,
+      );
+      expect(page.isImagePage, isTrue);
+      expect(page.hasVideo, isTrue);
+      expect(SongPage.isVideo('klip.MP4'), isTrue);
+    });
+
+    test('a container the box cannot decode is not a video', () {
+      // .webm plays on any laptop and would run the four cores flat here, so
+      // it stays an image source and fails visibly rather than silently.
+      expect(SongPage.isVideo('klip.webm'), isFalse);
+      expect(SongPage.isVideo('slika.jpg'), isFalse);
+      final page = SongPage.parse('/x/013-a.md', '![](a.jpg)\n', number: 13);
+      expect(page.hasVideo, isFalse);
+    });
+
     test('an image next to words is prose with a picture in it', () {
       final page = SongPage.parse(
         '/x/011-mesano.md',

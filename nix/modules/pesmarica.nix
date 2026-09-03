@@ -19,6 +19,21 @@ let
 
   apAddress = "192.168.4.1";
 
+  # What gstreamer loads at runtime, as against what flutter-pi links: core and
+  # base for playbin and the pipeline itself, good for the mp4 demuxer and the
+  # v4l2 decoder that is the Pi's own H.264 block, bad for the H.264 parser,
+  # and libav for the AAC an mp4 usually carries. The audio is muted on the
+  # display side, but playbin still has to be able to decode the stream it
+  # finds: a missing decoder fails the whole pipeline, not just its sound.
+  gstPlugins = [
+    pkgs.gst_all_1.gst-libav
+    pkgs.gst_all_1.gst-plugins-bad
+    pkgs.gst_all_1.gst-plugins-base
+    pkgs.gst_all_1.gst-plugins-good
+    pkgs.gst_all_1.gstreamer
+  ];
+  gstPluginPath = lib.concatMapStringsSep ":" (p: "${p}/lib/gstreamer-1.0") gstPlugins;
+
   # flutter-pi takes the rotation as a startup flag, so it is read here rather
   # than by the app: the web interface writes it into settings.json and restarts
   # the unit. A panel mounted sideways is the normal case for signage.
@@ -959,6 +974,9 @@ in
         # Where the updater leaves its status, which is all the app knows about
         # updates: it reads that one file and starts one unit.
         "PESMARICA_RUN=${runtimeDir}"
+        # gstreamer finds its plugins by path and nothing else; without this
+        # the video player plugin loads and then cannot build a pipeline.
+        "GST_PLUGIN_SYSTEM_PATH_1_0=${gstPluginPath}"
       ];
       ExecStart = launch;
       Restart = "always";

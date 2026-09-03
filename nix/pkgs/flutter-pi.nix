@@ -2,6 +2,7 @@
 , stdenv
 , fetchFromGitHub
 , cmake
+, gst_all_1
 , pkg-config
 , libdrm
 , libGL
@@ -27,7 +28,21 @@ stdenv.mkDerivation (finalAttrs: {
   nativeBuildInputs = [ cmake pkg-config ];
   # libgbm rather than mesa: gbm.pc moved into its own package, and mesa no
   # longer carries it -- CMake fails at "No package 'gbm' found".
-  buildInputs = [ libdrm libGL libgbm libinput libxkbcommon systemd udev ];
+  # gstreamer for the video player plugin below: core plus plugins-base, which
+  # is where the app, allocators and video interfaces the plugin links against
+  # live. The plugins it loads at *runtime* are a separate list, in the
+  # module -- a build input here would not be on the box's plugin path.
+  buildInputs = [
+    gst_all_1.gst-plugins-base
+    gst_all_1.gstreamer
+    libdrm
+    libGL
+    libgbm
+    libinput
+    libxkbcommon
+    systemd
+    udev
+  ];
 
   # The Flutter engine is not a build input: flutter-pi dlopen()s
   # libflutter_engine.so at runtime out of the app bundle, which is produced on
@@ -44,7 +59,12 @@ stdenv.mkDerivation (finalAttrs: {
     (lib.cmakeBool "BUILD_RAW_KEYBOARD_PLUGIN" true)
     (lib.cmakeBool "BUILD_GSTREAMER_AUDIO_PLAYER_PLUGIN" false)
     (lib.cmakeBool "TRY_BUILD_GSTREAMER_AUDIO_PLAYER_PLUGIN" false)
-    (lib.cmakeBool "BUILD_GSTREAMER_VIDEO_PLAYER_PLUGIN" false)
+    # Video. The decode is the Pi's own H.264 block through v4l2, and the
+    # frames reach Flutter as dmabufs rather than being copied -- which is the
+    # only reason this is possible at all on four A53 cores. Not TRY_: a build
+    # that quietly dropped the plugin would leave a box whose video pages are
+    # blank with nothing to say why.
+    (lib.cmakeBool "BUILD_GSTREAMER_VIDEO_PLAYER_PLUGIN" true)
     (lib.cmakeBool "TRY_BUILD_GSTREAMER_VIDEO_PLAYER_PLUGIN" false)
     (lib.cmakeBool "BUILD_CHARSET_CONVERTER_PLUGIN" false)
     (lib.cmakeBool "BUILD_SENTRY_PLUGIN" false)

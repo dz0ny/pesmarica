@@ -17,6 +17,8 @@ dependencies:
   shelf: ^1.4.2
   shelf_router: ^1.1.4
   crypto: ^3.0.6
+  flutterpi_gstreamer_video_player: ^0.2.0
+  video_player: ^2.11.1
 
 dev_dependencies:
   flutter_test:

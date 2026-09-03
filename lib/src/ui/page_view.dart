@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:path/path.dart' as p;
+import 'package:video_player/video_player.dart';
 
 import '../model/settings.dart';
 import '../model/song_page.dart';
@@ -144,7 +145,34 @@ class SongPageView extends StatelessWidget {
   Widget _imageAt(int index) {
     final source = page.images[index];
     final uri = Uri.tryParse(source);
-    return uri == null ? _missing(source) : _image(uri, source);
+    if (uri == null) return _missing(source);
+    if (!SongPage.isVideo(source)) return _image(uri, source);
+
+    final file = _localFile(uri);
+    if (file == null || !file.existsSync()) {
+      return _missing(p.basename(source));
+    }
+    // A page that is one video loops it: signage, not a clip somebody pressed
+    // play on. Several sources means the slideshow timer is what moves the
+    // page along, so the video plays once and lets it.
+    return _VideoStage(
+      file: file,
+      loop: page.images.length == 1,
+      onFailure: () => _missing(p.basename(source)),
+    );
+  }
+
+  /// Where a media source points on this box, or null for one that is not a
+  /// local file at all. Video has no network path: the box is usually offline
+  /// and a stalled fetch on the display path is a black screen in a hall.
+  File? _localFile(Uri uri) {
+    if (uri.scheme == 'http' || uri.scheme == 'https') return null;
+    if (uri.hasScheme && uri.scheme == 'file') return File(uri.toFilePath());
+    return File(
+      p.isAbsolute(uri.path)
+          ? uri.path
+          : p.join(contentRoot, Uri.decodeComponent(uri.path)),
+    );
   }
 
   Widget _image(Uri uri, String? alt) {
@@ -238,4 +266,84 @@ class _ImageStageState extends State<_ImageStage> {
       ),
     ),
   );
+}
+
+/// One video, filling the panel the way an image does.
+///
+/// The controller belongs to this widget and dies with it, which is what makes
+/// a slideshow safe: `AnimatedSwitcher` keys each item by index, so moving on
+/// disposes the pipeline rather than leaving it decoding behind a picture.
+///
+/// Muted, deliberately. The box drives a screen in a room that has its own
+/// sound, and a hall does not want a video shouting at it when somebody pages
+/// past. It is also the safe default: with no audio sink configured, a
+/// pipeline that wants one can stall instead of playing silently.
+class _VideoStage extends StatefulWidget {
+  const _VideoStage({
+    required this.file,
+    required this.loop,
+    required this.onFailure,
+  });
+
+  final File file;
+  final bool loop;
+  final Widget Function() onFailure;
+
+  @override
+  State<_VideoStage> createState() => _VideoStageState();
+}
+
+class _VideoStageState extends State<_VideoStage> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _open();
+  }
+
+  Future<void> _open() async {
+    final controller = VideoPlayerController.file(widget.file);
+    try {
+      await controller.initialize();
+      await controller.setVolume(0);
+      await controller.setLooping(widget.loop);
+      await controller.play();
+    } catch (_) {
+      // A file the decoder will not take is the same to the operator as a file
+      // that is not there: the page says so and the box carries on. Anything
+      // else here is a black screen nobody can explain from the back of a hall.
+      await controller.dispose();
+      if (mounted) setState(() => _failed = true);
+      return;
+    }
+    if (!mounted) {
+      await controller.dispose();
+      return;
+    }
+    setState(() => _controller = controller);
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) return widget.onFailure();
+    final controller = _controller;
+    // Nothing rather than a spinner while the pipeline comes up: the panel is
+    // already the page's colour, and a spinner on a wall is worse than a beat
+    // of stillness.
+    if (controller == null) return const SizedBox.expand();
+    return Center(
+      child: AspectRatio(
+        aspectRatio: controller.value.aspectRatio,
+        child: VideoPlayer(controller),
+      ),
+    );
+  }
 }

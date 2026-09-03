@@ -312,6 +312,18 @@ persisted and no route reads it, so `Presenter` does not know about it. This is
 the one place `assets/web/markdown.js` deliberately does not follow the display:
 the preview is a box in an editor, and full bleed there means nothing.
 
+**Video is an image page with a different widget in it.** `![](klip.mp4)` goes
+through the same `SongPage.images` parser -- one media line per line, nothing
+else on the page -- and `_imageAt` dispatches on the extension. The decode is
+the Pi's own H.264 block through gstreamer's v4l2 plugin, which is why
+`SongPage.videoExtensions` lists containers H.264 arrives in rather than
+everything gstreamer can open: the four A53 cores cannot software-decode VP9 or
+H.265 at any useful size, and a file that plays on a laptop proves nothing.
+The controller lives in `_VideoStage` and dies with the widget, so a slideshow
+disposes each pipeline instead of leaving it decoding behind the next picture.
+It plays muted on purpose -- the hall has its own sound, and a pipeline wanting
+an audio sink that is not there can stall rather than play quietly.
+
 **`AutoFit` converges over frames, not in one pass.** Markdown reflows as the
 font size changes, so it measures, shrinks and re-measures, holding the child at
 opacity 0 until settled. It restarts when `signature` changes — if you add
