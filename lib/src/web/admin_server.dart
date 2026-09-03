@@ -377,6 +377,7 @@ class AdminServer {
         'scale': page.scale,
         'align': page.align.name,
         'showTitle': page.showTitle,
+        'slideshow': page.slideshow?.inSeconds,
         // Keys Pesmarica does not interpret. Shown, not editable, so nobody
         // wonders where they went -- they are kept on every write.
         'extra': page.extra,
@@ -413,6 +414,7 @@ class AdminServer {
 
     final title = (front['title'] as String?)?.trim();
     final showTitle = front['showTitle'];
+    final slideshow = (front['slideshow'] as num?)?.round();
 
     return songbook.pages[index]
         .copyWith(
@@ -425,6 +427,10 @@ class AdminServer {
               : PageAlign.start,
           showTitle: showTitle is bool ? showTitle : null,
           clearShowTitle: showTitle == null,
+          slideshow: slideshow == null || slideshow <= 0
+              ? null
+              : Duration(seconds: slideshow),
+          clearSlideshow: slideshow == null || slideshow <= 0,
         )
         .toSource();
   }

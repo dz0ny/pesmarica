@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -36,8 +37,23 @@ class SongPageView extends StatelessWidget {
   /// in the body is part of the content and stays there either way.
   final bool showTitle;
 
+  /// A page that is only images gives the screen over to them: no page
+  /// padding, no title, the picture fitted to the whole panel. Several images
+  /// only do that as a slideshow -- contain-fitting four of them side by side
+  /// leaves four pictures nobody can see.
+  bool get _fullBleed =>
+      page.isImagePage && (page.images.length == 1 || page.slideshow != null);
+
   @override
   Widget build(BuildContext context) {
+    if (_fullBleed) {
+      return _ImageStage(
+        sources: page.images,
+        interval: page.slideshow,
+        builder: _imageAt,
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // Type size is derived from the panel, not from a fixed pixel value,
@@ -125,6 +141,12 @@ class SongPageView extends StatelessWidget {
     );
   }
 
+  Widget _imageAt(int index) {
+    final source = page.images[index];
+    final uri = Uri.tryParse(source);
+    return uri == null ? _missing(source) : _image(uri, source);
+  }
+
   Widget _image(Uri uri, String? alt) {
     if (uri.scheme == 'http' || uri.scheme == 'https') {
       return Image.network(uri.toString(), fit: BoxFit.contain);
@@ -147,6 +169,73 @@ class SongPageView extends StatelessWidget {
     child: Text(
       '[$label]',
       style: TextStyle(color: palette.muted, fontFamily: font.family),
+    ),
+  );
+}
+
+/// One image at a time, filling the panel. Holds the timer that moves a
+/// slideshow along; a page with a single image never starts one.
+class _ImageStage extends StatefulWidget {
+  const _ImageStage({
+    required this.sources,
+    required this.interval,
+    required this.builder,
+  });
+
+  final List<String> sources;
+  final Duration? interval;
+  final Widget Function(int index) builder;
+
+  @override
+  State<_ImageStage> createState() => _ImageStageState();
+}
+
+class _ImageStageState extends State<_ImageStage> {
+  int _index = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _restart();
+  }
+
+  @override
+  void didUpdateWidget(_ImageStage old) {
+    super.didUpdateWidget(old);
+    if (old.interval != widget.interval ||
+        old.sources.length != widget.sources.length) {
+      _restart();
+    }
+  }
+
+  void _restart() {
+    _timer?.cancel();
+    _timer = null;
+    if (_index >= widget.sources.length) _index = 0;
+    final interval = widget.interval;
+    if (interval == null || widget.sources.length < 2) return;
+    _timer = Timer.periodic(interval, (_) {
+      setState(() => _index = (_index + 1) % widget.sources.length);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox.expand(
+    child: AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      child: KeyedSubtree(
+        key: ValueKey<int>(_index),
+        // The switcher stacks its children loosely, so the picture has to be
+        // told to take the whole panel; `contain` letterboxes it inside that.
+        child: SizedBox.expand(child: widget.builder(_index)),
+      ),
     ),
   );
 }

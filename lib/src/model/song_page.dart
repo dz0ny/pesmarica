@@ -16,6 +16,7 @@ class SongPage {
     required this.scale,
     required this.align,
     required this.showTitle,
+    required this.slideshow,
     required this.extra,
   });
 
@@ -46,11 +47,32 @@ class SongPage {
   /// flipping the global switch still moves every ordinary page.
   final bool? showTitle;
 
+  /// How long each image stays up on a page that is nothing but images, or
+  /// null when the page does not cycle. Only ever set from `slideshow:`.
+  final Duration? slideshow;
+
   /// Front matter keys Pesmarica does not interpret, preserved on rewrite.
   final Map<String, Object?> extra;
 
   static const double minScale = 0.4;
   static const double maxScale = 4.0;
+
+  static const Duration defaultSlideshow = Duration(seconds: 5);
+  static const int minSlideshowSeconds = 1;
+  static const int maxSlideshowSeconds = 120;
+
+  /// One image on a line of its own, which is the only shape an image page is
+  /// written in: markdown that puts an image inside a paragraph is prose.
+  static final RegExp _imageLine = RegExp(
+    r'^!\[[^\]]*\]\(\s*<?([^)>]+?)>?(?:\s+"[^"]*")?\s*\)$',
+  );
+
+  /// The images of a page whose body holds nothing else, in the order they are
+  /// written; empty for every other page. A page that mixes an image into its
+  /// text is prose with a picture in it and keeps the ordinary layout.
+  late final List<String> images = _parseImages(body);
+
+  bool get isImagePage => images.isNotEmpty;
 
   String get fileName => p.basename(path);
 
@@ -70,6 +92,7 @@ class SongPage {
       ..remove('scale')
       ..remove('align')
       ..remove('showTitle')
+      ..remove('slideshow')
       // Not fields any more, and not preserved either: pages written by an
       // older Pesmarica carry a view counter and a timestamp that nothing reads.
       // Dropping them here means they disappear the next time a human edits the
@@ -92,8 +115,21 @@ class SongPage {
           ? PageAlign.center
           : PageAlign.start,
       showTitle: _bool(matter.values['showTitle']),
+      slideshow: _slideshow(matter.values['slideshow']),
       extra: extra,
     );
+  }
+
+  static List<String> _parseImages(String body) {
+    final images = <String>[];
+    for (final line in body.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      final match = _imageLine.firstMatch(trimmed);
+      if (match == null) return const <String>[];
+      images.add(match.group(1)!.trim());
+    }
+    return images;
   }
 
   static String _derivedTitle(String body, String path) {
@@ -126,6 +162,24 @@ class SongPage {
     }
   }
 
+  /// `slideshow: 5` is five seconds; a bare `true` takes the default. Anything
+  /// else -- absent, false, nonsense -- means the page does not cycle.
+  static Duration? _slideshow(Object? raw) {
+    if (raw is bool) return raw ? defaultSlideshow : null;
+    final text = '${raw ?? ''}'.trim();
+    if (text.isEmpty) return null;
+    final seconds = num.tryParse(text);
+    if (seconds != null) {
+      if (!seconds.isFinite || seconds <= 0) return null;
+      return Duration(
+        seconds: seconds
+            .round()
+            .clamp(minSlideshowSeconds, maxSlideshowSeconds),
+      );
+    }
+    return _bool(raw) == true ? defaultSlideshow : null;
+  }
+
   static double clampScale(double value) =>
       value.isFinite ? value.clamp(minScale, maxScale) : 1.0;
 
@@ -146,6 +200,7 @@ class SongPage {
           : double.parse(effectiveScale.toStringAsFixed(2)),
       'align': effectiveAlign == PageAlign.center ? 'center' : null,
       'showTitle': showTitle,
+      'slideshow': slideshow?.inSeconds,
     };
     return FrontMatter.compose(values, body ?? this.body);
   }
@@ -160,9 +215,11 @@ class SongPage {
     double? scale,
     PageAlign? align,
     bool? showTitle,
+    Duration? slideshow,
     String? body,
     bool clearTitle = false,
     bool clearShowTitle = false,
+    bool clearSlideshow = false,
   }) {
     final nextTitle = clearTitle ? null : (declaredTitle ?? this.declaredTitle);
     final nextBody = body ?? this.body;
@@ -175,6 +232,7 @@ class SongPage {
       scale: scale == null ? this.scale : clampScale(scale),
       align: align ?? this.align,
       showTitle: clearShowTitle ? null : (showTitle ?? this.showTitle),
+      slideshow: clearSlideshow ? null : (slideshow ?? this.slideshow),
       extra: extra,
     );
   }

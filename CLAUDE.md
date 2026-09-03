@@ -296,6 +296,17 @@ plaintext `password:` out of `settings.json` on load and rewrites the file
 without it. Anything new that touches settings must not reintroduce the
 plaintext — `Settings.toJson` deliberately never emits it.
 
+**An image page leaves the text path entirely.** A body that is nothing but
+image lines (`SongPage.images`) is drawn by `_ImageStage` in `page_view.dart`:
+no page padding, no title, no `AutoFit`, the picture contained in the whole
+panel. Several images do that only with `slideshow:` in the front matter, which
+is also the timer that rotates them; without it they keep the ordinary padded
+layout, because four pictures contained side by side are four pictures nobody
+can read. The image index lives in that widget and nowhere else -- it is not
+persisted and no route reads it, so `Presenter` does not know about it. This is
+the one place `assets/web/markdown.js` deliberately does not follow the display:
+the preview is a box in an editor, and full bleed there means nothing.
+
 **`AutoFit` converges over frames, not in one pass.** Markdown reflows as the
 font size changes, so it measures, shrinks and re-measures, holding the child at
 opacity 0 until settled. It restarts when `signature` changes — if you add
