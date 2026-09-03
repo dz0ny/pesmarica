@@ -718,6 +718,11 @@ class AdminServer {
       case '.jpg':
       case '.jpeg':
         return 'image/jpeg';
+      case '.m4v':
+      case '.mp4':
+        return 'video/mp4';
+      case '.mov':
+        return 'video/quicktime';
       default:
         return 'application/octet-stream';
     }

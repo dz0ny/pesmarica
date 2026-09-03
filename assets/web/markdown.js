@@ -16,15 +16,27 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
+/// The containers the box can play, kept in step with SongPage.videoExtensions.
+const VIDEO = /\.(m4v|mov|mp4)$/i;
+
 /// Emphasis, code and images, applied to already-escaped text. Images are
 /// rewritten to the /media route the box serves them from; anything that is not
 /// a plain relative file name is left as text rather than turned into a tag.
+///
+/// Video is written as an image and comes out as a <video>: muted and looping,
+/// as the display plays it, so the editor shows what the screen will do. It is
+/// not autoplayed here -- an editor that starts playing at you while you type
+/// is its own kind of wrong, and the screen is where it matters.
 function inline(text) {
   return text
     .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (whole, alt, src) => {
       const name = src.replace(/^images\//, '');
       if (!/^[A-Za-z0-9._-]+$/.test(name)) return whole;
-      return '<img src="/media/' + encodeURIComponent(name) + '" alt="' + alt + '">';
+      const url = '/media/' + encodeURIComponent(name);
+      if (VIDEO.test(name)) {
+        return '<video src="' + url + '" controls muted loop playsinline></video>';
+      }
+      return '<img src="' + url + '" alt="' + alt + '">';
     })
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')

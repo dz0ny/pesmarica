@@ -248,6 +248,21 @@ takes its turn, looping — without it a page of several images is laid out as
 before, since four pictures contained side by side are four pictures nobody can
 read. An image next to words is prose with a picture in it and is unaffected.
 
+Video is written the same way — `![](images/klip.mp4)` — and plays where the
+picture would be. A page that is one video loops it. Several sources on a page
+still belong to `slideshow`, so a video there plays once and lets the timer
+move on.
+
+**There is no sound.** Not muted-by-default: the box carries no audio decoder,
+because the screen hangs in a room that has its own sound and the alternative
+was a couple of hundred megabytes of card for something nothing would play.
+
+Only H.264 in `.mp4`, `.m4v` or `.mov`. That is not fussiness: the Zero 2 W has
+a hardware H.264 decoder and nothing else it can keep up with, so a `.webm` or
+an H.265 file that plays perfectly on a laptop will not play here. Transcode
+first — `ffmpeg -i in.webm -c:v libx264 -profile:v high -pix_fmt yuv420p out.mp4`
+— and keep it to 1080p.
+
 `showTitle` means the same thing wherever the title comes from — turning it off
 also drops a leading `# Heading` that repeats the title. Leave it out and the
 page follows `showTitle` in `settings.json`.

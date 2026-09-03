@@ -19,6 +19,35 @@ let
 
   apAddress = "192.168.4.1";
 
+  # What gstreamer loads at runtime, as against what flutter-pi links against.
+  # flutter-pi's pipeline is
+  #
+  #   uridecodebin ! video/x-raw ! appsink
+  #
+  # so beyond core and base it needs the mp4 demuxer, the H.264 parser that
+  # turns what qtdemux emits into the byte stream the decoder takes, and the
+  # v4l2 decoder that is the Pi's own H.264 block.
+  #
+  # Those three objects arrive inside two packages that between them put GTK,
+  # PulseAudio, OpenAL and libcamera in the closure -- most of the 254 MB video
+  # costs. Copying just the three .so files out does *not* avoid that: each one
+  # links its own package's helper libraries (libgstcodecparsers and friends),
+  # so nix reads the reference and pulls the package back whole. Measured: it
+  # saved 0.1 MB. Getting that space back means building these two packages
+  # with their optional plugins disabled, which is a source build of each on
+  # every nixpkgs bump -- the mesa tax again, and not yet paid.
+  #
+  # No gst-libav, though. That pipeline ends at a video sink, so a stream the
+  # box cannot decode is a stream nothing was going to play, and ffmpeg leaves
+  # the closure entirely. It follows that video here has no sound at all.
+  gstPlugins = [
+    pkgs.gst_all_1.gst-plugins-bad
+    pkgs.gst_all_1.gst-plugins-base
+    pkgs.gst_all_1.gst-plugins-good
+    pkgs.gst_all_1.gstreamer
+  ];
+  gstPluginPath = lib.concatMapStringsSep ":" (p: "${p}/lib/gstreamer-1.0") gstPlugins;
+
   # flutter-pi takes the rotation as a startup flag, so it is read here rather
   # than by the app: the web interface writes it into settings.json and restarts
   # the unit. A panel mounted sideways is the normal case for signage.
@@ -959,6 +988,9 @@ in
         # Where the updater leaves its status, which is all the app knows about
         # updates: it reads that one file and starts one unit.
         "PESMARICA_RUN=${runtimeDir}"
+        # gstreamer finds its plugins by path and nothing else; without this
+        # the video player plugin loads and then cannot build a pipeline.
+        "GST_PLUGIN_SYSTEM_PATH_1_0=${gstPluginPath}"
       ];
       ExecStart = launch;
       Restart = "always";

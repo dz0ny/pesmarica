@@ -386,7 +386,8 @@ textarea {
 .preview p { margin: 0 0 .9em; }
 .preview blockquote { margin: 0 0 .9em; padding-left: .9em; border-left: 2px solid var(--brass); color: var(--muted); font-style: italic; }
 .preview ul { margin: 0 0 .9em; padding-left: 1.2em; }
-.preview img { max-width: 100%; }
+.preview img,
+.preview video { max-width: 100%; }
 .preview code { font-family: var(--mono); font-size: .9em; }
 .preview .none { color: var(--muted); }
 

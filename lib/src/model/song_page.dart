@@ -70,9 +70,26 @@ class SongPage {
   /// The images of a page whose body holds nothing else, in the order they are
   /// written; empty for every other page. A page that mixes an image into its
   /// text is prose with a picture in it and keeps the ordinary layout.
+  ///
+  /// Video is written the same way -- `![](klip.mp4)` -- because on a page
+  /// that is nothing but media the two are the same thing to the operator, and
+  /// giving video its own syntax would mean a second parser and a second set
+  /// of rules about what may sit next to what.
   late final List<String> images = _parseImages(body);
 
   bool get isImagePage => images.isNotEmpty;
+
+  /// The containers the box can actually play. The Zero 2 W decodes H.264 in
+  /// hardware and nothing else at any useful size, so this is a list of what
+  /// H.264 usually arrives in rather than of everything gstreamer can open:
+  /// a .webm that plays on a laptop would run the four cores flat and drop
+  /// most of its frames here.
+  static const Set<String> videoExtensions = {'.m4v', '.mov', '.mp4'};
+
+  static bool isVideo(String source) =>
+      videoExtensions.contains(p.extension(source).toLowerCase());
+
+  bool get hasVideo => images.any(isVideo);
 
   String get fileName => p.basename(path);
 

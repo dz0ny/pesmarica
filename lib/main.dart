@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutterpi_gstreamer_video_player/flutterpi_gstreamer_video_player.dart';
 import 'package:path/path.dart' as p;
 
 import 'src/data/boot_config.dart';
@@ -28,6 +29,12 @@ Directory resolveContentRoot() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await enterKioskMode();
+
+  // video_player has no implementation that registers itself on flutter-pi, so
+  // the box has to name one. Linux is the box: on a developer's macOS the
+  // bundled AVFoundation implementation registers itself and this would
+  // replace a working one with a pipeline that is not there.
+  if (Platform.isLinux) FlutterpiVideoPlayer.registerWith();
 
   final songbook = Songbook(resolveContentRoot());
   await songbook.start();
