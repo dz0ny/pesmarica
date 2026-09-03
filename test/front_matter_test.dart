@@ -81,6 +81,53 @@ void main() {
       expect(page.toSource(scale: 1.0), isNot(contains('scale')));
     });
 
+    test('a page of nothing but images is an image page', () {
+      final page = SongPage.parse(
+        '/x/010-slike.md',
+        '---\ntitle: Oznanila\n---\n\n![](a.jpg)\n\n![druga](b.png "z naslovom")\n',
+        number: 10,
+      );
+      expect(page.isImagePage, isTrue);
+      expect(page.images, <String>['a.jpg', 'b.png']);
+    });
+
+    test('an image next to words is prose with a picture in it', () {
+      final page = SongPage.parse(
+        '/x/011-mesano.md',
+        'Pojemo\n\n![](a.jpg)\n',
+        number: 11,
+      );
+      expect(page.isImagePage, isFalse);
+      expect(page.images, isEmpty);
+    });
+
+    test('slideshow is seconds, and true is the default', () {
+      SongPage read(String header) =>
+          SongPage.parse('/x/012-a.md', '---\n$header\n---\n\n![](a.jpg)\n', number: 12);
+
+      expect(read('slideshow: 8').slideshow, const Duration(seconds: 8));
+      expect(read('slideshow: true').slideshow, SongPage.defaultSlideshow);
+      expect(read('slideshow: false').slideshow, isNull);
+      expect(read('slideshow: nekaj').slideshow, isNull);
+      expect(read('slideshow: 0').slideshow, isNull);
+      expect(read('slideshow: 9999').slideshow?.inSeconds, SongPage.maxSlideshowSeconds);
+      expect(SongPage.parse('/x/013-a.md', '![](a.jpg)\n', number: 13).slideshow, isNull);
+    });
+
+    test('slideshow survives a rewrite instead of leaking into extra', () {
+      final page = SongPage.parse(
+        '/x/014-a.md',
+        '---\nslideshow: 7\n---\n\n![](a.jpg)\n',
+        number: 14,
+      );
+      expect(page.extra['slideshow'], isNull);
+
+      final again = SongPage.parse('/x/014-a.md', page.toSource(scale: 1.2), number: 14);
+      expect(again.slideshow, const Duration(seconds: 7));
+
+      expect(page.copyWith(clearSlideshow: true).toSource(), isNot(contains('slideshow')));
+    });
+
     test('clamps absurd magnification', () {
       expect(SongPage.clampScale(99), SongPage.maxScale);
       expect(SongPage.clampScale(0.01), SongPage.minScale);

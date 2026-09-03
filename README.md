@@ -227,6 +227,7 @@ title: Čebelica na travniku   # optional; otherwise the first heading, then the
 scale: 1.1                    # magnification set with + / − on the display
 align: center                 # start (default) or center
 showTitle: false              # hide the title on this page
+slideshow: 5                  # seconds per image, on a page that is only images
 ---
 
 Čez travnik, čez polje
@@ -239,6 +240,13 @@ keep your own metadata alongside.
 `scale` is a multiplier on top of an automatic fit: type is sized from the panel
 height and then shrunk further if the page would not fit, so the same songbook
 reads correctly on a 1080p TV and on a 4K panel.
+
+A page whose body is nothing but images is given the whole screen: no page
+padding and no title, the picture fitted to the panel. With several images that
+needs `slideshow`, which is how many seconds each one stays up before the next
+takes its turn, looping — without it a page of several images is laid out as
+before, since four pictures contained side by side are four pictures nobody can
+read. An image next to words is prose with a picture in it and is unaffected.
 
 `showTitle` means the same thing wherever the title comes from — turning it off
 also drops a leading `# Heading` that repeats the title. Leave it out and the

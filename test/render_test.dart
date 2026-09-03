@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -165,5 +166,62 @@ void main() {
     await tester.runAsync(songbook.reload);
     await show(tester);
     expect(find.textContaining('Pesmarica je prazna'), findsOneWidget);
+  });
+
+  testWidgets('an image page fills the panel and cycles on its own', (tester) async {
+    // Its own songbook: an image page has no title bar of its own to count,
+    // and the fixture above is what the other tests measure against.
+    final slides = Directory.systemTemp.createTempSync('pesmarica-slides');
+    addTearDown(() => slides.deleteSync(recursive: true));
+    // A real 1x1 PNG: Image.file decodes what it is handed, and a stub throws.
+    final png = Uint8List.fromList(<int>[
+      137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, //
+      0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, //
+      0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 250, 207, 192, 240, 31, 0, //
+      5, 4, 2, 0, 155, 254, 84, 92, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ]);
+    File(p.join(slides.path, 'prva.png')).writeAsBytesSync(png);
+    File(p.join(slides.path, 'druga.png')).writeAsBytesSync(png);
+    File(p.join(slides.path, '001-slike.md')).writeAsStringSync(
+      '---\ntitle: Oznanila\nslideshow: 1\n---\n\n![](prva.png)\n\n![](druga.png)\n',
+    );
+
+    final book = Songbook(slides);
+    // Real file I/O never completes inside the test's fake async zone.
+    await tester.runAsync(book.start);
+    addTearDown(book.dispose);
+    final screen = Presenter(book);
+    addTearDown(screen.dispose);
+
+    tester.view.physicalSize = const Size(1920, 1080);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(home: PresenterScreen(presenter: screen, adminUrl: null)),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // The incoming picture is the last one the switcher stacks.
+    String shown() => (tester
+                .widgetList<Image>(find.byType(Image))
+                .last
+                .image
+            as FileImage)
+        .file
+        .path;
+
+    // Contained across the whole width: no page padding on an image page.
+    expect(tester.getSize(find.byType(Image).last).width, 1920);
+    expect(p.basename(shown()), 'prva.png');
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(p.basename(shown()), 'druga.png');
+
+    // And back around, rather than stopping on the last one.
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(p.basename(shown()), 'prva.png');
+    expect(tester.takeException(), isNull);
   });
 }

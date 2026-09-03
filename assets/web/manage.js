@@ -622,6 +622,19 @@ function Manage() {
           </select>
         </label>
 
+        <label class="field">
+          <span class="stencil">Diaprojekcija</span>
+          <input type="number" min="0" max="120" step="1"
+            value=${front.slideshow == null ? '' : front.slideshow}
+            onInput=${(e) => setField({
+              slideshow: e.target.value === '' ? null : Number(e.target.value),
+            })} />
+          <span class="hint">
+            Sekunde na sliko. Deluje samo, kadar na strani ni ničesar razen slik;
+            takrat se slike vrstijo v krogu čez ves zaslon. Prazno pomeni brez.
+          </span>
+        </label>
+
         ${Object.keys(front.extra || {}).length > 0 && html`<p class="warn">
           Ta stran ima še zapise, ki jih Pesmarica ne uporablja:
           ${' ' + Object.keys(front.extra).join(', ')}. Ostanejo, kakršni so.
