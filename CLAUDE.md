@@ -312,6 +312,20 @@ persisted and no route reads it, so `Presenter` does not know about it. This is
 the one place `assets/web/markdown.js` deliberately does not follow the display:
 the preview is a box in an editor, and full bleed there means nothing.
 
+**Media is converted in the browser, never on the box.** `assets/web/media.js`
+decodes a dropped still with `createImageBitmap`, scales it to `MAX_EDGE` and
+re-encodes it before upload -- so whatever the browser can read (HEIC, AVIF, a
+TIFF) becomes something the box certainly can, at a size the panel can
+actually show. A clip is only sniffed: it walks the MP4 box tree to `stsd` and
+reads the sample entry's four-character code, because `hvc1` appears as a
+compatible brand on plenty of H.264 files and a sniff that scanned for the
+string would refuse them. Only `moov` is read, by slicing -- a clip off a phone
+is half a gigabyte and reading it whole to learn four characters kills the tab.
+`tool/test_media.mjs` builds box trees and pins all of it, decoy included.
+Nothing is transcoded: writing WebCodecs output back out as MP4 needs a muxer
+this repo would have to vendor, and the one ffmpeg line is smaller and honest
+about how long it takes.
+
 **Video is an image page with a different widget in it.** `![](klip.mp4)` goes
 through the same `SongPage.images` parser -- one media line per line, nothing
 else on the page -- and `_imageAt` dispatches on the extension. The decode is
@@ -435,6 +449,9 @@ while there is still somebody connected to be told about it.
 boot partition, pinning above all that a download going wrong -- half a
 release, a dead uplink, an archive carrying its own marker -- costs only the
 slot the box is not running from.
+`tool/test_media.mjs` covers the browser-side media conversion -- `node
+tool/test_media.mjs`, no harness, because it is the one piece of that module
+that can be subtly wrong on somebody's phone and nowhere else.
 `test/remote_access_test.dart` starts a real server on a temp songbook and
 pins which routes need the password -- note that it has to null out
 `HttpOverrides.global`, because the test binding stubs `HttpClient` into

@@ -5,6 +5,7 @@
 // guards and `/` is not.
 
 import { html, render, useEffect, useLayoutEffect, useRef, useState } from '/static/preact.js';
+import { convertImage, inspectVideo, isImageFile, isVideoFile } from '/static/media.js';
 import { api, flipSkin, json, skin } from '/static/common.js';
 import { previewHtml } from '/static/markdown.js';
 
@@ -31,7 +32,10 @@ function updateSays(update) {
 }
 
 const isMarkdown = (file) => /\.(md|markdown|txt)$/i.test(file.name);
-const isImage = (file) => file.type.startsWith('image/');
+/// Anything the editor will take at the cursor: a still, or a clip. Both are
+/// written into the page as an image, because on the display they are the same
+/// kind of page.
+const isMedia = (file) => isImageFile(file) || isVideoFile(file);
 
 /// The songbook list. It is the sidebar on a laptop and a modal on a phone,
 /// where a permanent list would leave the editor a slot too small to write in.
@@ -332,20 +336,34 @@ function Manage() {
   };
 
   const insertImages = async (files) => {
-    const wanted = files.filter(isImage);
-    if (!wanted.length) return say('V besedilo spusti slikovne datoteke.', true);
+    const wanted = files.filter(isMedia);
+    if (!wanted.length) return say('V besedilo spusti slike ali posnetke.', true);
     if (editing == null) return say('Najprej izberi stran.', true);
     for (const file of wanted) {
       try {
-        const result = await api('/api/images?name=' + encodeURIComponent(file.name), {
-          method: 'POST', body: file,
+        // Converted here rather than on the box: this machine has the decoders
+        // and the seconds to spare, and what reaches the card is then already
+        // what the screen wants. A clip is only checked -- see media.js.
+        let body = file;
+        let name = file.name;
+        if (isVideoFile(file)) {
+          const verdict = await inspectVideo(file);
+          if (!verdict.ok) { say(file.name + ': ' + verdict.why, true); continue; }
+        } else {
+          say('Pretvarjam ' + file.name + '…');
+          const out = await convertImage(file);
+          body = out.blob;
+          name = out.name;
+        }
+        const result = await api('/api/images?name=' + encodeURIComponent(name), {
+          method: 'POST', body,
         });
         edit((value, start) => ({
           value: value.slice(0, start) + '\n' + result.markdown + '\n' + value.slice(start),
           start: start + result.markdown.length + 2,
           end: start + result.markdown.length + 2,
         }));
-        say('Slika dodana: ' + result.path + ' — ne pozabi shraniti.');
+        say('Dodano: ' + result.path + ' — ne pozabi shraniti.');
       } catch (e) { say(file.name + ': ' + e.message, true); }
     }
   };
@@ -515,7 +533,7 @@ function Manage() {
       </div>
 
       <div class="sheet" ...${dropZone((files) =>
-        files.some(isMarkdown) && !files.some(isImage)
+        files.some(isMarkdown) && !files.some(isMedia)
           ? importMarkdown(files) : insertImages(files))}>
         <div class="sheet-head on-desk">
           <span class="what">

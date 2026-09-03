@@ -253,6 +253,16 @@ picture would be. A page that is one video loops it. Several sources on a page
 still belong to `slideshow`, so a video there plays once and lets the timer
 move on.
 
+Dropping a picture or a clip on the editor uploads it. **The browser converts
+it first:** a still is decoded, scaled down to what a 4K panel can show and
+re-encoded, so an iPhone's HEIC or a 12-megapixel photograph arrives as
+something the box can decode quickly and the card has room for. A clip is
+checked rather than converted — it is sent as it is if it carries H.264, and
+refused with the `ffmpeg` line above if it does not.
+
+The conversion happens on the phone or laptop doing the uploading, which has
+the decoders and the seconds to spare. The box has neither.
+
 **There is no sound.** Not muted-by-default: the box carries no audio decoder,
 because the screen hangs in a room that has its own sound and the alternative
 was a couple of hundred megabytes of card for something nothing would play.
