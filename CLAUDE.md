@@ -187,6 +187,16 @@ forty kilobytes, and every phone in the room holds that poll open.
 never edit it. The modules are plain ES modules loaded by URL, so they must
 import each other as `/static/x.js`, not by relative path.
 
+**Icons are lucide paths in `assets/web/icons.js`.** Copied verbatim from
+lucide-icons/lucide, one export per icon, because the box is often its own
+access point and these pages have no build step for a font or a sprite sheet.
+They draw in `currentColor`, which is what makes them follow the skin -- a
+literal colour in there is the same bug as a literal hex anywhere else. A
+button that carries a word beside its icon wraps the word in `<span
+class="word">`: on a phone `.managing .labelled .word` hides it, and the button
+falls back to its `title`. That rule is scoped to `.managing` on purpose --
+the remote is a phone interface already and its words are the whole interface.
+
 **Every colour is a token in `:root`.** There are two skins, dark and light,
 selected by `data-skin` on `<html>` -- set by an inline script in each page
 before the stylesheet paints. A literal hex anywhere else is a bug: it will look

@@ -4,4 +4,4 @@ align: center
 showTitle: false
 ---
 
-![Logotip](images/primer.png)
+![](images/screen-recording-2026-09-03-at-13-49-12.mov)

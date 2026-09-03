@@ -14,7 +14,10 @@
 // over the top when somebody knows the song by its first line instead.
 
 import { html, render, useEffect, useRef, useState } from '/static/preact.js';
-import { SquarePen } from '/static/icons.js';
+import {
+  ChevronLeft, ChevronRight, Delete, Minus, MonitorPlay, Moon, Plus, Search,
+  SquarePen, Sun,
+} from '/static/icons.js';
 import { api, flipSkin, skin } from '/static/common.js';
 
 const POLL = 3000;
@@ -138,9 +141,11 @@ function Remote() {
         Pesmarica
       </span>
       <span class="grow"></span>
-      <button class="link" onClick=${() => setLight(flipSkin() === 'light')}>
-        ${light ? 'Temno' : 'Svetlo'}
-      </button>
+      <button
+        class="link icon-link"
+        onClick=${() => setLight(flipSkin() === 'light')}
+        title=${light ? 'Temna barvna shema' : 'Svetla barvna shema'}
+      >${light ? html`<${Moon} label="Temno" />` : html`<${Sun} label="Svetlo" />`}</button>
       <a
         class="link icon-link"
         href=${'/manage' + (now.current == null ? '' : '#' + now.current)}
@@ -165,28 +170,35 @@ function Remote() {
       </section>
 
       <div class="step">
-        <button onClick=${() => drive('/api/prev')}>◀ Nazaj</button>
-        <button onClick=${() => drive('/api/next')}>Naprej ▶</button>
+        <button class="labelled" onClick=${() => drive('/api/prev')}>
+          <${ChevronLeft} size=${18} /> Nazaj</button>
+        <button class="labelled" onClick=${() => drive('/api/next')}>
+          Naprej <${ChevronRight} size=${18} /></button>
       </div>
 
       <div class="zoom">
-        <button class="key" title="Pomanjšaj" onClick=${() => drive('/api/zoom/out')}>−</button>
+        <button class="key" title="Pomanjšaj" onClick=${() => drive('/api/zoom/out')}>
+          <${Minus} label="Pomanjšaj" size=${22} /></button>
         <button
           class="key act" disabled=${nudged === 0}
           title="Nazaj na velikost strani" onClick=${() => drive('/api/zoom/reset')}
         >${nudged === 0 ? 'Velikost' : (nudged > 0 ? '+' : '−') + Math.abs(nudged) + ' %'}</button>
-        <button class="key" title="Povečaj" onClick=${() => drive('/api/zoom/in')}>+</button>
+        <button class="key" title="Povečaj" onClick=${() => drive('/api/zoom/in')}>
+          <${Plus} label="Povečaj" size=${22} /></button>
       </div>
 
       <div class="pad">
         ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(
           (d) => html`<button class="key" onClick=${() => type(String(d))}>${d}</button>`)}
-        <button class="key act" disabled=${!typed} onClick=${rub}>Briši</button>
+        <button class="key act" disabled=${!typed} onClick=${rub} title="Briši">
+          <${Delete} label="Briši" size=${22} /></button>
         <button class="key" onClick=${() => type('0')}>0</button>
-        <button class="key act go" disabled=${!typed} onClick=${commit}>Pokaži</button>
+        <button class="key act go labelled" disabled=${!typed} onClick=${commit}>
+          <${MonitorPlay} size=${18} /> Pokaži</button>
       </div>
 
-      <button class="browse" onClick=${browse}>Poišči po naslovu</button>
+      <button class="browse labelled" onClick=${browse}>
+        <${Search} size=${17} /> Poišči po naslovu</button>
 
       <p class=${'note' + (note.bad ? ' bad' : '')}>${note.text}</p>
     </main>

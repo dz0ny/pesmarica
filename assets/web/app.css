@@ -143,6 +143,23 @@ body {
   padding: 7px 10px;
 }
 
+/* A button that carries an icon beside its word. The gap is the only thing
+   this needs: everything else -- colour, size, the disabled state -- already
+   comes from the button, and the icon draws in currentColor so it follows. */
+.labelled {
+  display: inline-flex; align-items: center; gap: 7px;
+  white-space: nowrap;
+}
+/* An icon standing in for the word entirely. Square, so it sits in a row of
+   worded buttons without making the row taller. */
+.icon-only {
+  display: inline-flex; align-items: center; justify-content: center;
+  aspect-ratio: 1; padding: 8px;
+}
+/* Icons never shrink when a row runs out of room: a squashed icon reads as a
+   different icon, where a wrapped word still reads as the word. */
+.labelled svg, .icon-only svg, .icon-link svg { flex: none; }
+
 /* The one thing the cog says without being opened: a release is downloaded and
    waiting for somebody to press Namesti. A dot rather than a word, because the
    chrome has no room for a sentence and this is not urgent -- it waits. */
@@ -250,6 +267,10 @@ body {
 .key {
   min-height: 58px;
   font: 700 26px/1 var(--display); font-variant-numeric: tabular-nums;
+  /* Centred as a box, not on a baseline: an svg is an inline element and would
+     otherwise sit on the text baseline, leaving its key a few pixels taller
+     than the numerals beside it and the whole row visibly crooked. */
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
 }
 .key.act {
   font: 700 12px/1 var(--ui); letter-spacing: .16em; text-transform: uppercase;
@@ -495,6 +516,13 @@ dialog h2 + .field { margin-top: 10px; }
   .on-desk { display: none; }
   .on-phone { display: flex; }
   button.on-phone, .tools .on-phone { display: inline-block; }
+
+  /* On a phone the editor is the whole screen and its bar is competing with the
+     keyboard, so a labelled button there drops its word and keeps its icon.
+     Scoped to .managing on purpose: the remote is a phone interface to begin
+     with, held at arm's length in a hall, and its words are the whole point. */
+  .managing .labelled .word { display: none; }
+  .managing .labelled { gap: 0; aspect-ratio: 1; justify-content: center; }
   .top { flex-wrap: nowrap; padding: 10px 12px; }
   /* Sticky headers and a sticky action bar only work if the page itself is
      exactly the viewport, so the editor -- not the document -- is what scrolls.

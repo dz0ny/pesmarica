@@ -6,7 +6,11 @@
 
 import { html, render, useEffect, useLayoutEffect, useRef, useState } from '/static/preact.js';
 import { convertImage, inspectVideo, isImageFile, isVideoFile } from '/static/media.js';
-import { Settings as SettingsIcon } from '/static/icons.js';
+import {
+  Eye, FilePlus, Hash, Image, Italic, Bold, Heading1, Heading2, List, Lock,
+  MonitorPlay, Moon, Pilcrow, Quote, Save, Settings as SettingsIcon, Sliders,
+  Smartphone, Sun, Trash,
+} from '/static/icons.js';
 import { api, flipSkin, json, skin } from '/static/common.js';
 import { previewHtml } from '/static/markdown.js';
 
@@ -54,7 +58,7 @@ function PageList({ pages, find, setFind, editing, live, onPick, onCreate }) {
         class="find" type="text" inputmode="search" placeholder="Poišči stran"
         value=${find} onInput=${(e) => setFind(e.target.value)}
       />
-      <button onClick=${onCreate}>Nova stran</button>
+      <button class="labelled" title="Nova stran" onClick=${onCreate}><${FilePlus} size=${16} /><span class="word">Nova stran</span></button>
     </div>
     <div class="pages">
       ${shown.map((page) => html`
@@ -544,8 +548,12 @@ function Manage() {
           : html`<span class="n">${editing}</span> ${title}`}
       </span>
       <span class="grow"></span>
-      <button class="link on-desk" onClick=${flip}>${light ? 'Temno' : 'Svetlo'}</button>
-      <a class="link on-desk" href="/">Daljinec</a>
+      <button class="link icon-link on-desk" onClick=${flip}
+        title=${light ? 'Temna barvna shema' : 'Svetla barvna shema'}>
+        ${light ? html`<${Moon} label="Temno" />` : html`<${Sun} label="Svetlo" />`}
+      </button>
+      <a class="link icon-link on-desk" href="/" title="Daljinec">
+        <${Smartphone} label="Daljinec" /></a>
       <button
         class=${'link icon-link on-desk' + (ready ? ' flagged' : '')}
         onClick=${() => device.current.showModal()}
@@ -570,26 +578,31 @@ function Manage() {
               : html`<span class="n">${editing}</span>`}
           </span>
           <span class="grow"></span>
-          <button onClick=${() => sheetSettings.current.showModal()}
-            disabled=${editing == null}>Nastavitve strani</button>
-          <button onClick=${renumber} disabled=${editing == null}
-            title="Številka je vrstni red">Preštevilči</button>
-          <button onClick=${show} disabled=${editing == null}>Prikaži</button>
-          <button class="primary" onClick=${save} disabled=${editing == null}>Shrani</button>
-          <button class="danger" onClick=${remove} disabled=${editing == null}>Izbriši</button>
+          <button class="labelled" title="Nastavitve strani"
+            onClick=${() => sheetSettings.current.showModal()}
+            disabled=${editing == null}><${Sliders} size=${16} /><span class="word">Nastavitve strani</span></button>
+          <button class="labelled" onClick=${renumber} disabled=${editing == null}
+            title="Številka je vrstni red"><${Hash} size=${16} /><span class="word">Preštevilči</span></button>
+          <button class="labelled" title="Prikaži na zaslonu" onClick=${show} disabled=${editing == null}>
+            <${MonitorPlay} size=${16} /><span class="word">Prikaži</span></button>
+          <button class="labelled primary" title="Shrani (⌘S)" onClick=${save} disabled=${editing == null}>
+            <${Save} size=${16} /><span class="word">Shrani</span></button>
+          <button class="labelled danger" title="Izbriši stran" onClick=${remove} disabled=${editing == null}>
+            <${Trash} size=${16} /><span class="word">Izbriši</span></button>
         </div>
 
         <div class="tools">
-          ${tool(html`<b>B</b>`, 'Krepko (⌘B)', () => wrap('**'))}
-          ${tool(html`<i>I</i>`, 'Ležeče (⌘I)', () => wrap('*'))}
+          ${tool(html`<${Bold} size=${17} />`, 'Krepko (⌘B)', () => wrap('**'))}
+          ${tool(html`<${Italic} size=${17} />`, 'Ležeče (⌘I)', () => wrap('*'))}
           <span class="sep"></span>
-          ${tool('H1', 'Naslov', () => prefixLines('# '))}
-          ${tool('H2', 'Podnaslov', () => prefixLines('## '))}
-          ${tool('”', 'Zbor ali refren', () => prefixLines('> '))}
-          ${tool('•', 'Seznam', () => prefixLines('- '))}
+          ${tool(html`<${Heading1} size=${17} />`, 'Naslov', () => prefixLines('# '))}
+          ${tool(html`<${Heading2} size=${17} />`, 'Podnaslov', () => prefixLines('## '))}
+          ${tool(html`<${Quote} size=${17} />`, 'Zbor ali refren', () => prefixLines('> '))}
+          ${tool(html`<${List} size=${17} />`, 'Seznam', () => prefixLines('- '))}
           <span class="sep"></span>
-          ${tool('Kitica', 'Prelom kitice', verseBreak)}
-          ${tool('Slika', 'Vstavi sliko', () => imagePicker.current.click())}
+          ${tool(html`<${Pilcrow} size=${17} />`, 'Prelom kitice', verseBreak)}
+          ${tool(html`<${Image} size=${17} />`, 'Vstavi sliko ali posnetek',
+            () => imagePicker.current.click())}
         </div>
 
         ${previewing
@@ -603,27 +616,30 @@ function Manage() {
         <div class="sheet-foot on-desk">
           <span class=${'say grow' + (note.bad ? ' bad' : '')}>${note.text}</span>
           <button
-            class=${previewing ? 'on' : ''}
+            class=${'labelled' + (previewing ? ' on' : '')}
             title="Predogled (⌘P)"
             onClick=${() => setPreviewing(!previewing)}
-          >Predogled</button>
+          ><${Eye} size=${16} /><span class="word">Predogled</span></button>
         </div>
 
         <div class="phone-bar on-phone">
-          <button onClick=${openChooser}>Strani</button>
+          <button class="labelled" onClick=${openChooser} title="Strani">
+            <${List} size=${18} /><span class="word">Strani</span></button>
           <span class=${'say grow' + (note.bad ? ' bad' : '')}>${note.text}</span>
-          <button class=${previewing ? 'on' : ''} onClick=${() => setPreviewing(!previewing)}
-            title="Predogled">Predogled</button>
-          <button class="primary" onClick=${save} disabled=${editing == null}>Shrani</button>
+          <button class=${'icon-only' + (previewing ? ' on' : '')}
+            onClick=${() => setPreviewing(!previewing)}
+            title="Predogled"><${Eye} label="Predogled" /></button>
+          <button class="labelled primary" onClick=${save} disabled=${editing == null}>
+            <${Save} size=${16} /><span class="word">Shrani</span></button>
         </div>
       </div>
     </main>
 
     ${dragging && html`<div class="drophint">
-      Markdown spusti levo na seznam · sliko spusti desno v besedilo
+      Markdown spusti levo na seznam · sliko ali posnetek desno v besedilo
     </div>`}
 
-    <input ref=${imagePicker} type="file" accept="image/*" multiple hidden
+    <input ref=${imagePicker} type="file" accept="image/*,video/mp4,video/quicktime" multiple hidden
       onChange=${async (e) => { await insertImages(Array.from(e.target.files)); e.target.value = ''; }} />
 
     <dialog ref=${sheetSettings}>
@@ -721,7 +737,8 @@ function Manage() {
       <button onClick=${() => cog(openUpdates)}>
         ${ready ? 'Posodobitev je pripravljena' : 'Posodobitev'}
       </button>
-      ${state.protected && html`<button onClick=${() => cog(lock)}>Zakleni urejanje</button>`}
+      ${state.protected && html`<button class="labelled" onClick=${() => cog(lock)}>
+        <${Lock} size=${16} /><span class="word">Zakleni urejanje</span></button>`}
       <menu><button class="primary" onClick=${() => device.current.close()}>Zapri</button></menu>
     </dialog>
 
