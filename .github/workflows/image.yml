@@ -57,41 +57,11 @@ jobs:
           # one from pkgs/flutter-pi.nix, linked against the image's libraries.
           rm -f out/bundle/flutter-pi out/bundle/.last_build_id
 
-      # What the box installs through the web interface. The run artifact above
-      # is a zip -- upload-artifact always zips -- and the updater takes a tar,
-      # so the tarball is built here rather than left for whoever downloads it.
-      #
-      # The version goes *inside* the archive: the web interface falls back to
-      # the file name, and a file name does not survive a download folder.
-      - name: Pack it for the updater
-        run: |
-          case "$GITHUB_EVENT_NAME" in
-            release)           version="${{ github.event.release.tag_name }}" ;;
-            push)              version="$GITHUB_REF_NAME" ;;
-            *)                 version="${GITHUB_SHA::7}" ;;
-          esac
-          printf '%s\n' "$version" > out/bundle/.version
-
-          mkdir -p out/release
-          name="pesmarica-bundle-$version.tar.gz"
-          # -C out bundle: one directory at the top, which the installer strips.
-          tar czf "out/release/$name" -C out bundle
-          (cd out/release && sha256sum "$name" > "$name.sha256")
-          ls -lh out/release
-
       - uses: actions/upload-artifact@v7
         with:
           name: bundle
           path: out/bundle
           retention-days: 7
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: bundle-tar
-          path: out/release/*
-          # Already gzipped; the artifact zip would only add a layer of nothing.
-          compression-level: 0
-          retention-days: 14
 
   image:
     name: SD image (aarch64)
@@ -225,15 +195,6 @@ jobs:
           # Already compressed; the artifact zip would only add a layer of nothing.
           compression-level: 0
           retention-days: 14
-
-      # Attached alongside the image: reflashing a card is the way to install
-      # the appliance, but not the way to update one that is already on a wall.
-      # An operator with the tarball can do that from the access point.
-      - uses: actions/download-artifact@v8
-        if: github.event_name == 'release'
-        with:
-          name: bundle-tar
-          path: out
 
       # A run artifact expires and needs a GitHub login to fetch. Someone
       # flashing a card months from now wants neither, so a published release
