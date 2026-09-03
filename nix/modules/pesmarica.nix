@@ -14,6 +14,8 @@ let
 
   flutter-pi = pkgs.callPackage ../pkgs/flutter-pi.nix { };
 
+  plymouthTheme = pkgs.callPackage ../pkgs/plymouth-theme.nix { };
+
   # Staged next to the bundle: a flake cannot reference paths outside its root.
   content = ../content;
 
@@ -347,8 +349,7 @@ in
   # Upstream ships loglevel=7 with console=tty1, so every kernel message and
   # every unit systemd starts scrolls across the screen until flutter-pi takes
   # it. Errors still reach the serial console for anyone debugging with a
-  # cable; routine progress is gone from both. The screen stays black until
-  # the first frame -- a real splash image is its own piece of work.
+  # cable; routine progress is gone from both.
   boot.consoleLogLevel = lib.mkForce 3;
   boot.initrd.verbose = false;
   boot.kernelParams = [
@@ -356,6 +357,50 @@ in
     "systemd.show_status=false"
     "vt.global_cursor_default=0"
   ];
+
+  # What takes the messages' place. Quieting the boot left the panel black
+  # from power-on until flutter-pi's first frame some twenty seconds later,
+  # and a black screen says "booting", "running" and "dead" in the same voice
+  # -- which is an afternoon spent looking for a fault that was not there. The
+  # splash is the box saying which of the three it is, in the same two colours
+  # and one muted tone the display itself uses.
+  boot.plymouth = {
+    enable = true;
+    theme = "pesmarica";
+    themePackages = [ plymouthTheme ];
+    # Upstream's default is a NixOS snowflake, and it goes into the initrd
+    # whether a theme draws it or not; the theme draws this instead.
+    logo = "${plymouthTheme}/share/plymouth/themes/pesmarica/mark.png";
+    # Stock plymouth links GTK, for an X11 renderer on a box that has no X
+    # server, and gtk3 brings at-spi2-core, cups, avahi and tinysparql behind
+    # it: about 160 MiB of closure by a diff of the two, against the 25 MiB
+    # the splash costs with the renderer left out (measured: the closure went
+    # from 1465452 to 1490697 KiB, and rootfs.img from 497 to 511 MiB). The
+    # flag is upstream's own option. Disabling pango as well would save
+    # perhaps another 30 MiB and cost every prompt plymouth can draw, which is
+    # a trade for someone who has watched this one boot first.
+    package = (pkgs.plymouth.override {
+      systemd = config.boot.initrd.systemd.package;
+    }).overrideAttrs (old: {
+      mesonFlags = old.mesonFlags ++ [ (lib.mesonEnable "gtk" false) ];
+      # Out of the inputs as well as out of the build: nixpkgs' linker wrapper
+      # puts an rpath entry in for every buildInput, and while the fixup phase
+      # usually shrinks the unused ones away, the megabytes here are worth not
+      # finding out on a card. It also spares CI fetching a GTK it never uses.
+      buildInputs = lib.filter
+        (dep: !(lib.hasPrefix "gtk+3" (lib.getName dep)))
+        old.buildInputs;
+      # The NixOS module removes renderers/x11.so from its initrd copy without
+      # -f, and a plymouth built without GTK never built one, so the module
+      # fails on a file that is correctly absent. The same shape as the empty
+      # spirv2dxil output mesa needs below: the file exists so that the line
+      # deleting it can run. Nothing loads it -- drm is the first renderer
+      # tried and the one that works here, and the initrd copy deletes this.
+      postInstall = old.postInstall + ''
+        touch $out/lib/plymouth/renderers/x11.so
+      '';
+    });
+  };
 
   # /run/opengl-driver. flutter-pi links libgbm and libEGL, and since mesa 25
   # both are thin front ends that find the actual driver -- dri_gbm.so and the
@@ -537,7 +582,10 @@ in
     neededForBoot = true;
   };
   boot.initrd.supportedFilesystems = { vfat = true; squashfs = true; };
-  boot.initrd.kernelModules = [ "loop" ];
+  # loop for the squashfs above; vc4 because plymouth draws through DRM and
+  # the splash is meant to cover the initrd too -- a display driver loaded
+  # only after the switch to the real root would miss most of what it is for.
+  boot.initrd.kernelModules = [ "loop" "vc4" ];
   boot.supportedFilesystems = { vfat = true; squashfs = true; };
 
   # NixOS activation rewrites the whole of /etc on every boot, which is the
@@ -888,11 +936,32 @@ in
       echo b > /proc/sysrq-trigger
     '';
   };
+  # The handoff. Plymouth holds DRM master on card0 and sits on tty1, both of
+  # which flutter-pi needs, so the app has to wait for plymouth to let go --
+  # and plymouth has to let go without clearing the screen, or the black
+  # ambiguity comes back for the seconds the app takes to draw. That is what
+  # --retain-splash does: plymouthd exits, the last frame stays on the scanout
+  # buffer, and the mark is still there when flutter-pi paints over it.
+  #
+  # After, not Requires: a splash that failed must never keep the songbook off
+  # the screen.
+  #
+  # The empty first entry is not decoration. This lands as a drop-in on the
+  # unit plymouth itself ships, and a drop-in that only adds an ExecStart gets
+  # both -- the packaged `plymouth quit`, which clears the screen, and then
+  # ours. Resetting the list first is how systemd is told to replace rather
+  # than append, and it is what upstream's own fixups here do.
+  systemd.services.plymouth-quit.serviceConfig.ExecStart = [
+    ""
+    # The leading "-" is upstream's, and kept for its reason: a splash that is
+    # not running is not a boot failure.
+    "-${config.boot.plymouth.package}/bin/plymouth quit --retain-splash"
+  ];
 
   systemd.services.pesmarica = {
     description = "Pesmarica digital signage";
     wantedBy = [ "multi-user.target" ];
-    after = [ "systemd-tmpfiles-setup.service" ];
+    after = [ "systemd-tmpfiles-setup.service" "plymouth-quit.service" ];
     unitConfig.RequiresMountsFor = [
       "/var/lib/pesmarica"
       # wifi.conf and display.conf: the web interface edits both.

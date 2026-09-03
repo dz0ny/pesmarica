@@ -231,6 +231,19 @@ unit hangs up the tty on start, the getty hangs it back, and the app restarts
 every two seconds with nothing in the journal. Both instances are disabled;
 keep them so.
 
+**The splash sits on tty1 too, and hands it over rather than sharing it.**
+Plymouth draws the boot screen through DRM on the same tty and the same
+`card0` flutter-pi wants, so the app is ordered after `plymouth-quit.service`
+and that unit is made to quit with `--retain-splash`: plymouthd exits, the
+last frame stays on the scanout buffer, and the mark is still there for the
+seconds until the app paints over it. Drop the ordering and the app races
+plymouth for DRM master; drop `--retain-splash` and the black screen is back
+in the gap, which is the whole thing this was meant to remove. The theme is
+`nix/pkgs/`: two generated PNGs and a plymouth script, in `PagePalette.dark`.
+Plymouth is built with `-Dgtk=disabled` because its X11 renderer, on a box
+with no X server, drags gtk3, cups, avahi and at-spi2 in behind it -- some
+160 MiB against the 25 MiB the splash costs without it.
+
 **GPU drivers only exist under `/run/opengl-driver`.** flutter-pi links
 `libgbm` and `libEGL`, which since mesa 25 are front ends that find `dri_gbm.so`
 and the EGL vendor file through that path alone. `hardware.graphics.enable` is
