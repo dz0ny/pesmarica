@@ -151,15 +151,47 @@ if [ -z "$BOXFETCH" ] && ! diff -q "$onbox" "$inbuild" >/dev/null; then
 fi
 rm -f "$onbox" "$inbuild"
 
+# Can this box roll back by itself? The helper that sets the firmware's tryboot
+# flag arrived with the trial-boot work; a box on an older image has no way to
+# arm one, and pointing config.txt straight at the new slot is all there is.
+if ssh "$HOST" "command -v pesmarica-tryboot-reboot" >/dev/null 2>&1; then
+	TRIAL=1
+else
+	TRIAL=""
+	echo "!! $HOST predates trial boots: this switch is permanent, and if the"
+	echo "!! new system does not come up the way back is a card reader."
+fi
+
 # Piped in rather than run on the box: this deploy has to work against a box
 # whose image predates the copy the image now installs, and the copy that
 # decides is the one being shipped.
-ssh "$HOST" "FIRMWARE=$FIRMWARE bash -s $SLOT" < "$ROOT/nix/scripts/system_switch.sh"
+ssh "$HOST" "FIRMWARE=$FIRMWARE bash -s ${TRIAL:+--try }$SLOT" < "$ROOT/nix/scripts/system_switch.sh"
+
+if [ -n "$TRIAL" ]; then
+	# The box reads this on its next boot: which slot is on trial, and how many
+	# goes it has had. Written here so that a trial boot which never finishes
+	# still leaves the count behind -- that is what makes a brownout mid-boot
+	# cost an attempt rather than the whole update.
+	ssh "$HOST" "printf 'slot=%s\nattempts=1\n' $SLOT > $FIRMWARE/tryboot.state.tmp &&
+		mv $FIRMWARE/tryboot.state.tmp $FIRMWARE/tryboot.state"
+fi
 
 echo "==> rebooting $HOST"
-# sync, then restart through sysrq. A clean shutdown tears down the loop
-# device the store lives on, and this box does not come back from that. Root
-# is a tmpfs and the store is read-only, so the sync is for the FAT partitions
-# and is everything a clean shutdown would have done for them. The connection
-# dies with the box, which is not a failure.
-ssh "$HOST" "sync; echo s > /proc/sysrq-trigger; sleep 1; echo b > /proc/sysrq-trigger" || true
+# Restart immediately, without a clean shutdown: that tears down the loop device
+# the store lives on, and this box does not come back from it. Root is a tmpfs
+# and the store is read-only, so the sync is for the FAT partitions and is
+# everything a clean shutdown would have done for them. The connection dies with
+# the box, which is not a failure.
+#
+# With a trial the restart has to carry the tryboot flag, which rides on the
+# reboot syscall's argument -- sysrq cannot, so the helper on the box does it.
+if [ -n "$TRIAL" ]; then
+	ssh "$HOST" "pesmarica-tryboot-reboot" || true
+else
+	ssh "$HOST" "sync; echo s > /proc/sysrq-trigger; sleep 1; echo b > /proc/sysrq-trigger" || true
+fi
+
+if [ -n "$TRIAL" ]; then
+	echo "==> slot $SLOT is on trial. It becomes permanent when the app answers;"
+	echo "==> if it does not, restarting the box returns it to slot $RUNNING."
+fi

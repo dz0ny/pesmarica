@@ -129,6 +129,22 @@ the device trees and `rootfs.img` — a zstd squashfs of the whole closure that
 the initrd loop-mounts as `/nix/store`, with root a tmpfs. No U-Boot, no ext4,
 no generations.
 
+**A new system boots on trial first, and nothing else makes it permanent.**
+`system_switch.sh --try <slot>` writes `tryboot.txt` -- config.txt with a
+different `os_prefix` -- and the firmware loads it instead of config.txt for
+exactly one boot, clearing the flag before it starts. So a crash, a hang or a
+power cut lands the next boot back on the slot that was already working.
+`pesmarica-tryboot.service` is what promotes it: it waits for the app to answer
+on `/api/remote`, and only then writes config.txt. A system that comes up
+broken is simply never promoted. The same unit does the retry, up to three
+goes, with the count kept on the card by the *known-good* system -- a trial is
+one shot, so without retries a brownout mid-boot would revert a perfectly good
+update. The flag rides on the reboot syscall's argument, which sysrq cannot
+carry, hence `pesmarica-tryboot-reboot`: the same immediate restart, with the
+argument attached. `tool/test_tryboot.sh` pins all of it, including that the
+attempt count goes up *before* the restart -- the other order is a loop with no
+end.
+
 **A system's slot is baked into it at build time** (`pesmarica.slot`): its
 fstab names its own `rootfs.img` by that path, and `os_prefix` in `config.txt`
 names the slot the firmware boots. A system staged under any other name boots
@@ -439,7 +455,9 @@ that looks finished and is missing its kernel is a card reader trip.
 `test/front_matter_test.dart` and `test/presenter_test.dart` are plain `test()`
 over a temp songbook — fast, and where most logic belongs.
 `test/render_test.dart` and `test/title_test.dart` are widget tests over a real
-`PresenterScreen`. `tool/test_system_switch.sh` covers system updates: it runs
+`PresenterScreen`. `tool/test_tryboot.sh` covers the trial boot and the retry -- both directions
+are a card reader trip if they are wrong.
+`tool/test_system_switch.sh` covers system updates: it runs
 `nix/scripts/system_switch.sh` against fake boot partitions, and every refusal it pins
 is a card reader trip that did not happen.
 `test/network_api_test.dart` pins what the web interface may write to the boot
