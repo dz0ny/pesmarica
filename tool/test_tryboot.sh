@@ -23,18 +23,20 @@ fixture() { # fixture <dir> <running slot>
 	printf 'kernel=kernel.img\nos_prefix=nixos-a/default/\ninitramfs initrd followkernel\n' > "$d/config.txt"
 	for s in a b; do
 		mkdir -p "$d/nixos-$s/default/overlays"
-		touch "$d/nixos-$s/default"/{initrd,cmdline.txt,rootfs.img,kernel.img,.complete} \
+		touch "$d/nixos-$s/default"/{initrd,cmdline.txt,rootfs.img,kernel.img,system-link,.complete} \
 			"$d/nixos-$s/default/bcm2710-rpi-zero-2-w.dtb" \
 			"$d/nixos-$s/default/overlays/vc4-kms-v3d.dtbo"
 	done
-	printf '%s\n' "$2" > "$d/slot"
+	# What find_slot.sh works out on the box, stubbed: which slot the firmware
+	# actually loaded this system out of.
+	printf '#!/bin/sh\necho %s\n' "$2" > "$d/slot"; chmod +x "$d/slot"
 	printf '#!/bin/sh\necho rebooted >> "%s/reboots"\n' "$d" > "$d/reboot"
 	chmod +x "$d/reboot"
 }
 
 # $1 dir, $2 probe command ("true"/"false"), rest: environment overrides
 run() { # run <dir> <probe> [LIMIT]
-	FIRMWARE="$1" SLOT_FILE="$1/slot" SWITCH="$SWITCH" REBOOT="$1/reboot" \
+	FIRMWARE="$1" FIND_SLOT="$1/slot" SWITCH="$SWITCH" REBOOT="$1/reboot" \
 		PROBE="$2" LIMIT="${3:-3}" bash "$TRYBOOT" >/dev/null 2>&1
 }
 prefix() { grep '^os_prefix=' "$1/config.txt"; }

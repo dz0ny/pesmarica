@@ -20,7 +20,7 @@ FIRMWARE="${FIRMWARE:-/boot/firmware}"
 RUNTIME="${RUNTIME:-/run/pesmarica}"
 CLIENT_MARKER="${CLIENT_MARKER:-$RUNTIME/client}"
 STATUS="${STATUS:-$RUNTIME/update.json}"
-SLOT_FILE="${SLOT_FILE:-/etc/pesmarica-slot}"
+FIND_SLOT="${FIND_SLOT:-pesmarica-find-slot}"
 SETTINGS="${SETTINGS:-/var/lib/pesmarica/settings.json}"
 REPO="${PESMARICA_REPO:-dz0ny/pesmarica}"
 API="${PESMARICA_API:-https://api.github.com}"
@@ -47,11 +47,11 @@ say() { # say <state> [key=value ...]
 
 # -- which slot, and which version -------------------------------------------
 
-running=$(tr -d '[:space:]' < "$SLOT_FILE" 2>/dev/null || true)
+running=$("$FIND_SLOT" 2>/dev/null || true)
 case "$running" in
 	a) free=b ;;
 	b) free=a ;;
-	*) say failed "error=ta sistem ne pove, iz katerega razdelka teče"; exit 1 ;;
+	*) say failed "error=ni mogoče ugotoviti, iz katerega razdelka teče"; exit 1 ;;
 esac
 
 # The marker the deploy and this script write last, holding the version that
@@ -95,12 +95,12 @@ release=$(curl -fsSL --max-time 30 --retry 2 \
 latest=$(printf '%s' "$release" | jq -r '.tag_name // empty' 2>/dev/null) || latest=""
 [ -n "$latest" ] || { say failed "running=$have" "error=GitHub ni vrnil izdaje"; exit 0; }
 
-# A release carries a payload per slot, and a system is built for the slot it
-# lives in: the wrong one boots its own kernel against the previous squashfs.
+# One payload, and it fits either slot: a system no longer knows which slot it
+# lives in, it works that out at boot from what the firmware loaded.
 asset_field() { # asset_field <key>
 	printf '%s' "$release" |
-		jq -r --arg p "pesmarica-system-$free-" --arg k "$1" \
-			'[.assets[]? | select(.name | startswith($p) and endswith(".tar.zst"))][0][$k] // empty' \
+		jq -r --arg k "$1" \
+			'[.assets[]? | select(.name | startswith("pesmarica-system-") and endswith(".tar.zst"))][0][$k] // empty' \
 		2>/dev/null || true
 }
 asset=$(asset_field browser_download_url)
@@ -130,7 +130,7 @@ if [ "$(version_of "$free")" = "$latest" ]; then
 	exit 0
 fi
 
-[ -n "$asset" ] || { say failed "running=$have" "available=$latest" "error=izdaja nima paketa za razdelek $free"; exit 0; }
+[ -n "$asset" ] || { say failed "running=$have" "available=$latest" "error=izdaja nima paketa sistema"; exit 0; }
 
 # -- the download ------------------------------------------------------------
 
@@ -173,7 +173,10 @@ if ! curl -fsSL --max-time 3600 "$asset" |
 	exit 0
 fi
 
-for f in cmdline.txt initrd kernel.img rootfs.img; do
+# system-link is in that list because the box cannot boot without it: it is how
+# the initrd works out which slot it came from, and so which rootfs.img is its
+# own. A payload without one is a slot that mounts nothing.
+for f in cmdline.txt initrd kernel.img rootfs.img system-link; do
 	[ -e "$FIRMWARE/nixos-$free/default/$f" ] && continue
 	rm -rf "${FIRMWARE:?}/nixos-$free"
 	say failed "running=$have" "available=$latest" "error=paket je nepopoln ($f)"

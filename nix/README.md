@@ -82,22 +82,43 @@ there is no separate bundle to push:
 
 ```bash
 HOST=root@192.168.4.1 RELEASE=v7 ../tool/deploy_system.sh   # from a release
-make system SLOT=b && HOST=... ../tool/deploy_system.sh       # built here
+make system && HOST=... ../tool/deploy_system.sh            # built here
 ```
 
 Expect minutes, not seconds: half a gigabyte over the box's own 2.4 GHz access
 point onto an SD card.
 
-The boot partition has two slots, `nixos-a` and `nixos-b`, and a system is
-built for one of them (`pesmarica.slot`): its fstab names its own `rootfs.img`
-by that path, and `config.txt`'s `os_prefix` names the slot the firmware boots.
-The deploy asks the box which slot it runs, fills the other, and moves
-`os_prefix` — one line in a plain file, written to a temp name and renamed.
-Nothing the running system has open is touched. A release carries a payload
-for each slot; the card image ships slot `a`. `scripts/system_switch.sh` is the
-on-box half -- piped over ssh by the deploy, installed here as
-`pesmarica-system-switch` for the updater, and covered without a Pi by
-`../tool/test_system_switch.sh`.
+The boot partition has two slots, `nixos-a` and `nixos-b`, and `config.txt`'s
+`os_prefix` names the one the firmware boots. The deploy asks the box which
+slot it runs, fills the other, and moves `os_prefix` — one line in a plain
+file, written to a temp name and renamed. Nothing the running system has open
+is touched. `scripts/system_switch.sh` is the on-box half -- piped over ssh by
+the deploy, installed here as `pesmarica-system-switch` for the updater, and
+covered without a Pi by `../tool/test_system_switch.sh`.
+
+**The same system fits either slot.** It used to be built for one of them: its
+fstab named its own `rootfs.img` by path and it carried the answer in
+`/etc/pesmarica-slot`, so a release had to ship two payloads of half a gigabyte
+that differed by a handful of bytes. Nothing in the closure names a slot now.
+The system is built under upstream's plain `nixos/`, `modules/image.nix`
+renames that to `nixos-a` for the card it writes, and a deploy or an update
+unpacks the one payload into whichever slot the box is not running.
+
+What replaces the baked-in answer is `scripts/find_slot.sh`, installed as
+`pesmarica-find-slot`. The firmware loaded this kernel out of one slot, and the
+cmdline it was given is that slot's `cmdline.txt` — which names this system's
+own store path. Each slot says which system it holds in `system-link`, written
+beside the kernel. The slot whose `system-link` is what we were started with is
+the one we are running, and that is right on a trial boot too, where
+`config.txt` still names the slot the box came from. It runs twice: in the
+initrd, where `pesmarica-store.service` symlinks the right `rootfs.img` before
+the store is loop-mounted, and on the box, where the updater, the trial-boot
+decision and the deploy all ask it. `../tool/test_find_slot.sh` covers it,
+including two slots holding the same system — then the payloads are identical,
+either answer boots the same bytes, and `config.txt` breaks the tie.
+
+`system-link` is therefore load-bearing: a slot without one mounts nothing, so
+the switch, the updater and the deploy all refuse a payload that is missing it.
 
 `scripts/update_check.sh` is the deploy without the laptop:
 `pesmarica-update-check.service`, on an hourly timer, asks GitHub for the
@@ -114,10 +135,28 @@ being asked to tear that down — twice, the box sat at "failed unmounting" unti
 the plug was pulled. Root is a tmpfs and the store is read-only; a sync first
 is everything a clean shutdown would have done.
 
-There is no automatic rollback — the Pi firmware picks the kernel before
-anything of ours runs, and the Zero 2 W has no `tryboot` to borrow. The
-previous system stays whole in its slot. If the new one does not come up, the
-way back is a card reader and one line of `config.txt`:
+A new system boots on trial first. `system_switch.sh --try <slot>` writes
+`tryboot.txt` -- `config.txt` with a different `os_prefix` -- and the firmware
+loads that instead of `config.txt` for exactly one boot, clearing the flag
+before it starts. So a crash, a hang or a power cut lands the next boot back on
+the slot that was already working, with no bootloader of ours in the chain and
+nothing written per boot.
+
+`pesmarica-tryboot.service` is what makes it permanent: on the next boot it
+compares the slot the box is actually running against the one `config.txt`
+names, and when they disagree it waits for the app to answer on `/api/remote`
+before writing `config.txt`. A system that comes up broken -- black screen, no
+radio, an app that will not start -- is simply never promoted. The same unit
+does the retry, up to three goes, with the count kept on the card by the
+*known-good* system: a trial is one shot, so without retries a brownout
+mid-boot would revert a perfectly good update. The flag rides on the reboot
+syscall's argument, which sysrq cannot carry, hence `pesmarica-tryboot-reboot`.
+`scripts/tryboot.sh` is the decision and `../tool/test_tryboot.sh` pins both
+directions, including that the attempt count goes up *before* the restart --
+the other order is a loop with no end.
+
+The previous system stays whole in its slot throughout. If everything above
+fails, the way back is still a card reader and one line of `config.txt`:
 
 ```
 os_prefix=nixos-a/default/      # or b: whichever it was running before
@@ -137,8 +176,9 @@ safest large write there is: the running slot is not touched, and a download
 cut halfway leaves a slot the switch refuses.
 
 The card is two FAT32 partitions and nothing else. `FIRMWARE` holds the Pi
-firmware, `config.txt`, and `nixos-<slot>/default/` with the kernel, the initrd,
-`cmdline.txt`, the device trees and `rootfs.img` -- the whole system as one
+firmware, `config.txt`, `tryboot.txt` while a system is on trial, and
+`nixos-<slot>/default/` with the kernel, the initrd, `cmdline.txt`,
+`system-link`, the device trees and `rootfs.img` -- the whole system as one
 zstd squashfs. There is no U-Boot: the firmware loads the kernel and initrd
 itself, and the initrd mounts the partition, loop-mounts `rootfs.img` as
 `/nix/store`, and gives the system a tmpfs for root. It is the shape of the

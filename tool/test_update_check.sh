@@ -35,13 +35,13 @@ is() { # is <what> <expected> <actual>
 
 # --- A release, and the stubs that serve it -------------------------------
 
-# The payload a release carries per slot: one directory, `default`, holding
-# what the firmware loads by name. .complete is in it on purpose -- the
-# updater must not let the archive's own marker land.
+# The payload a release carries: one directory, `default`, holding what the
+# firmware loads by name, and it fits either slot. .complete is in it on purpose
+# -- the updater must not let the archive's own marker land.
 payload() { # payload <tar.zst path> [missing file]
 	local out="$1" skip="${2:-}" d="$WORK/payload"
 	rm -rf "$d"; mkdir -p "$d/default/overlays"
-	for f in cmdline.txt initrd kernel.img rootfs.img bcm2710-rpi-zero-2-w.dtb; do
+	for f in cmdline.txt initrd kernel.img rootfs.img system-link bcm2710-rpi-zero-2-w.dtb; do
 		[ "$f" = "$skip" ] || echo "$f" > "$d/default/$f"
 	done
 	echo "v99" > "$d/default/.complete"
@@ -49,13 +49,9 @@ payload() { # payload <tar.zst path> [missing file]
 	(cd "$d" && tar -cf - default) | zstd -q -o "$out" -f
 }
 
-release_json() { # release_json <tag> [slot ...]
-	local tag="$1"; shift
-	local assets=""
-	for slot in "$@"; do
-		[ -z "$assets" ] || assets="$assets,"
-		assets="$assets{\"name\":\"pesmarica-system-$slot-abc1234.tar.zst\",\"size\":4096,\"browser_download_url\":\"https://example.invalid/$slot.tar.zst\"}"
-	done
+release_json() { # release_json <tag> [--empty]
+	local tag="$1" assets=""
+	[ "${2:-}" = --empty ] || assets='{"name":"pesmarica-system-abc1234.tar.zst","size":4096,"browser_download_url":"https://example.invalid/system.tar.zst"}'
 	printf '{"tag_name":"%s","assets":[%s]}\n' "$tag" "$assets"
 }
 
@@ -85,14 +81,14 @@ RUN="$WORK/run"
 export FIRMWARE="$BOOT" RUNTIME="$RUN"
 export STATUS="$RUN/update.json"
 export CLIENT_MARKER="$RUN/client"
-export SLOT_FILE="$WORK/pesmarica-slot"
+export FIND_SLOT="$WORK/find-slot"
 export SETTINGS="$WORK/settings.json"
 export PESMARICA_API="https://example.invalid"
 export RELEASE="$WORK/release.json" ASSET="$WORK/asset.tar.zst" CALLS="$WORK/calls"
 
 box() { # box [--running <version>] [--staged <version>] [--auto <true|false>]
 	rm -rf "$BOOT" "$RUN"; mkdir -p "$BOOT/nixos-a/default" "$BOOT/nixos-b/default" "$RUN"
-	echo a > "$SLOT_FILE"
+	printf '#!/bin/sh\necho a\n' > "$FIND_SLOT"; chmod +x "$FIND_SLOT"
 	: > "$CALLS"
 	touch "$RUN/client"
 	local auto=true
@@ -119,33 +115,33 @@ downloads() { grep -c 'tar.zst' "$CALLS" || true; }
 
 # --- Nothing to do --------------------------------------------------------
 
-box --running v7 --auto false; release_json v8 a b > "$RELEASE"; run
+box --running v7 --auto false; release_json v8 > "$RELEASE"; run
 is "off until somebody turns it on" off "$(state)"
 is "and nothing is downloaded" 0 "$(downloads)"
 
-box --running v7; release_json v8 a b > "$RELEASE"; rm -f "$RUN/client"; run
+box --running v7; release_json v8 > "$RELEASE"; rm -f "$RUN/client"; run
 is "an access point has no uplink to ask over" offline "$(state)"
 is "and nothing is downloaded" 0 "$(downloads)"
 
-box --running v7; release_json v8 a b > "$RELEASE"; HAS_ROUTE=0 run
+box --running v7; release_json v8 > "$RELEASE"; HAS_ROUTE=0 run
 is "on a network is not on the internet" offline "$(state)"
 is "and nothing is downloaded" 0 "$(downloads)"
 
-box --running v8; release_json v8 a b > "$RELEASE"; run
+box --running v8; release_json v8 > "$RELEASE"; run
 is "the running version is the latest" current "$(state)"
 is "and nothing is downloaded" 0 "$(downloads)"
 
-box --running v10; release_json v9 a b > "$RELEASE"; run
+box --running v10; release_json v9 > "$RELEASE"; run
 is "v10 is newer than v9, not older" current "$(state)"
 
-box --running v7 --staged v8; release_json v8 a b > "$RELEASE"; run
+box --running v7 --staged v8; release_json v8 > "$RELEASE"; run
 is "an update already in the slot is not fetched twice" ready "$(state)"
 is "and nothing is downloaded" 0 "$(downloads)"
 is "the slot it names is the free one" b "$(field slot)"
 
 # --- The download ---------------------------------------------------------
 
-box --running v7; release_json v8 a b > "$RELEASE"; run
+box --running v7; release_json v8 > "$RELEASE"; run
 is "a newer release lands in the free slot" ready "$(state)"
 is "the marker holds the release, not the archive's own" v8 "$(staged)"
 is "the version it came from is reported" v7 "$(field running)"
@@ -153,21 +149,21 @@ is "the version it came from is reported" v7 "$(field running)"
 [ "$(cat "$BOOT/nixos-a/default/kernel.img")" = kernel ] && ok "the running slot is untouched" || no "the running slot is untouched"
 [ -e "$BOOT/nixos-a/default/.complete" ] && ok "and keeps its own marker" || no "and keeps its own marker"
 
-box --running -; release_json v8 a b > "$RELEASE"; run
+box --running -; release_json v8 > "$RELEASE"; run
 is "a system that does not say its version takes the release" ready "$(state)"
 
-box --running v7; release_json v8 a > "$RELEASE"; run
-is "a release with no payload for the free slot is refused" failed "$(state)"
+box --running v7; release_json v8 --empty > "$RELEASE"; run
+is "a release with no system payload is refused" failed "$(state)"
 [ ! -e "$BOOT/nixos-b/default/.complete" ] && ok "and stages nothing" || no "and stages nothing"
 
 # --- When it goes wrong ---------------------------------------------------
 
-box --running v7; release_json v8 a b > "$RELEASE"; DOWNLOAD_FAILS=1 run
+box --running v7; release_json v8 > "$RELEASE"; DOWNLOAD_FAILS=1 run
 is "a download that dies is a failure" failed "$(state)"
 [ ! -d "$BOOT/nixos-b/default" ] && ok "and leaves no slot to switch to" || no "and leaves no slot to switch to"
 [ "$(cat "$BOOT/nixos-a/default/kernel.img")" = kernel ] && ok "and costs the running slot nothing" || no "and costs the running slot nothing"
 
-box --running v7; release_json v8 a b > "$RELEASE"; payload "$ASSET" kernel.img; run
+box --running v7; release_json v8 > "$RELEASE"; payload "$ASSET" kernel.img; run
 is "a payload without a kernel is a failure" failed "$(state)"
 [ ! -d "$BOOT/nixos-b/default" ] && ok "and is thrown away rather than left" || no "and is thrown away rather than left"
 
@@ -175,7 +171,8 @@ box --running v7; echo 'not json' > "$RELEASE"; run
 is "an answer that is not a release is a failure" failed "$(state)"
 is "and nothing is downloaded" 0 "$(downloads)"
 
-box --running v7; release_json v8 a b > "$RELEASE"; echo c > "$SLOT_FILE"; run
-is "a box that cannot say which slot it runs is a failure" failed "$(state)"
+box --running v7; release_json v8 > "$RELEASE"
+printf '#!/bin/sh\nexit 1\n' > "$FIND_SLOT"; run
+is "a box that cannot tell which slot it runs is a failure" failed "$(state)"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"; [ "$fail" -eq 0 ]

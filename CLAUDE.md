@@ -58,7 +58,7 @@ assets/web/                  the two pages: remote (/) and manage (/manage)
 nix/                         the appliance image (flake, module, Makefile)
 nix/scripts/                 shell that runs *on the box*, so the image can
                              install it: the launcher, the update checker,
-                             system_switch.sh
+                             system_switch.sh, tryboot.sh, find_slot.sh
 tool/                        shell that runs *here*: deploy, and the tests
                              that exercise nix/scripts against fake trees
 ```
@@ -145,18 +145,28 @@ argument attached. `tool/test_tryboot.sh` pins all of it, including that the
 attempt count goes up *before* the restart -- the other order is a loop with no
 end.
 
-**A system's slot is baked into it at build time** (`pesmarica.slot`): its
-fstab names its own `rootfs.img` by that path, and `os_prefix` in `config.txt`
-names the slot the firmware boots. A system staged under any other name boots
-its own kernel against the previous squashfs — quietly, and it will even come
-up. `tool/deploy_system.sh` asks the box which slot it runs
-(`/etc/pesmarica-slot`), fills the other, and moves `os_prefix`; nothing the
-running system has open is touched. Never rename a slot directory: the store is
-a loop device on a file inside it, and the kernel does not come back from
-tearing that down — which is also why the deploy reboots through sysrq rather
-than a clean shutdown. There is no automatic rollback, since the firmware picks
-the kernel before anything of ours runs; the previous system stays whole in its
-slot, and the way back is one line of `config.txt` with a card reader.
+**A system does not know its slot, it works it out at boot.** It used to be
+baked in at build time (`pesmarica.slot`), which made the two slots two
+different systems and a release two payloads of half a gigabyte that differed
+by a handful of bytes. Nothing in the closure names a slot now: the system is
+built under upstream's plain `nixos/`, `image.nix` renames that to `nixos-a`
+for the card, and the one release payload lands in whichever slot is free.
+`nix/scripts/find_slot.sh` is what replaces the baked-in answer — the firmware
+loaded this kernel out of one slot, so the cmdline it was given names this
+system's own store path, and each slot says which system it holds in
+`system-link` beside the kernel. That makes `system-link` load-bearing: a slot
+without one mounts nothing, which is why the switch, the updater and the deploy
+all refuse a payload missing it. It runs in the initrd
+(`pesmarica-store.service`, which symlinks the right `rootfs.img` before the
+store is loop-mounted) and on the box as `pesmarica-find-slot`, which is what
+`tool/deploy_system.sh` asks over ssh before it sends anything.
+`tool/test_find_slot.sh` pins it, including two slots holding the same system —
+then the payloads are identical, either answer boots the same bytes, and
+`config.txt` breaks the tie so a box that is not on trial does not look like
+one. Never rename a slot directory on a running box: the store is a loop device
+on a file inside it, and the kernel does not come back from tearing that down —
+which is also why the deploy reboots through sysrq rather than a clean
+shutdown.
 
 **`PESMARICA` is the only place anything persists** — the songbook, and the ssh
 host and authorized keys in `.ssh/`. The card can be pulled and the pages
@@ -410,7 +420,7 @@ Linux builder and a real Zero 2 W. Treat changes under `nix/` as unverified
 until someone flashes a card, and say so. CI builds it on Linux runners, which
 is the fastest way to find out whether a change even compiles. The exceptions
 are the shell: `pesmarica-boot-config`, which `tool/test_boot_config.sh` lifts
-out of the module, and the two scripts in `nix/scripts`, which take every path
+out of the module, and the scripts in `nix/scripts`, which take every path
 from the environment and so run as they are against a fake boot partition.
 
 **The app has no update path of its own.** It is in the closure, so replacing
@@ -439,8 +449,8 @@ piped over ssh by `tool/deploy_system.sh`, installed in the image as
 `tool/test_system_switch.sh` against a fake tree. Its refusals are what decide
 whether a box comes back, so there may not be a second copy of them; that is
 why it lives under `nix/` (a flake only sees its own root) rather than in
-`tool/`. `nix/scripts/update_check.sh` is there for the same reason, with
-`tool/test_update_check.sh` over it.
+`tool/`. `nix/scripts/update_check.sh`, `tryboot.sh` and `find_slot.sh` are
+there for the same reason, each with a `tool/test_*.sh` over it.
 
 **The marker goes last, and never inside the archive.** Both the deploy and the
 updater write `.complete` to a slot only once everything else is in it, because
@@ -460,6 +470,9 @@ are a card reader trip if they are wrong.
 `tool/test_system_switch.sh` covers system updates: it runs
 `nix/scripts/system_switch.sh` against fake boot partitions, and every refusal it pins
 is a card reader trip that did not happen.
+`tool/test_find_slot.sh` covers the answer all of that rests on -- which slot
+the box is actually running -- because a system no longer knows its own, and
+getting it wrong loop-mounts the other slot's store against this kernel.
 `test/network_api_test.dart` pins what the web interface may write to the boot
 partition -- above all that a passphrase wpa_supplicant would refuse is refused
 while there is still somebody connected to be told about it.

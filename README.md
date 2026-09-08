@@ -64,7 +64,7 @@ know from PowerPoint — type a number, press Enter.
 | Recovery | A rejected access point config is replaced with the shipped default |
 | Security | One password over editing, salted and hashed; cookie or `X-Pesmarica-Auth` header |
 | Appliance | NixOS image with the unit files, network, and paths defined once |
-| Updates | Two system slots on the card; the box can fetch a release itself, and installs only when asked |
+| Updates | Two system slots on the card; the box can fetch a release itself, installs only when asked, and goes back by itself if the new system does not come up |
 | Durability | Atomic writes; nothing is written to the card unless somebody edits a page |
 
 ## How It Works
@@ -141,8 +141,15 @@ HOST=root@pesmarica.local RELEASE=v7 ./tool/deploy_system.sh
 The app lives inside the system image, so there is one thing to update and one
 way to do it. The boot partition has two slots; the box says which it is
 running, the deploy fills the other from the release and points the firmware at
-it. The previous system stays whole in its slot, and rollback is a card reader
-and one line of `config.txt`.
+it. The same system fits either slot, so a release carries one payload rather
+than one per slot.
+
+It goes in on trial: the firmware loads the new slot for exactly one boot, and
+only once the app answers does the box write the change down. A crash, a hang
+or a plug pulled out of the wall, and the next boot is back on the system that
+was working — up to three goes before the box leaves the update alone. The
+previous system stays whole in its slot throughout, and if all of that fails
+the way back is still a card reader and one line of `config.txt`.
 
 A box that has been given a network can do the fetching half itself. Turn
 **Posodobitev → Sama poišči in prenesi novo različico** on in the web interface
@@ -526,13 +533,14 @@ All are SIL Open Font License; the licences ship in `assets/fonts/`.
 flutter test
 ```
 
-Three things run outside the Dart suite, because they are shell that has to work
-when the app does not: the slot switch, the updater that fills a slot, and the
-boot-partition preconfiguration. All three run against stub files, so none of
-them needs a Pi:
+Five things run outside the Dart suite, because they are shell that has to work
+when the app does not: the slot switch, the updater that fills a slot, the
+trial boot that decides whether an update sticks, the answer to which slot the
+box is running, and the boot-partition preconfiguration. All of them run
+against stub files, so none needs a Pi:
 
 ```bash
-./tool/test_system_switch.sh && ./tool/test_update_check.sh && ./tool/test_boot_config.sh
+./tool/test_find_slot.sh && ./tool/test_system_switch.sh && ./tool/test_tryboot.sh && ./tool/test_update_check.sh && ./tool/test_boot_config.sh
 ```
 
 The web interface is served from `assets/web/` through the Flutter asset bundle,

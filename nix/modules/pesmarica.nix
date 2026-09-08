@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, utils, ... }:
 
 let
   # Staged by the Makefile from build/flutter-pi/<cpu>/ -- the AOT snapshot, the
@@ -320,6 +320,20 @@ let
     (builtins.readFile ../scripts/update_check.sh);
   trybootDecide = pkgs.writeShellScriptBin "pesmarica-tryboot"
     (builtins.readFile ../scripts/tryboot.sh);
+  # The third of them, and the one the box cannot boot without: it is what the
+  # initrd asks before it has a store, and what everything else asks instead of
+  # reading a slot out of a file this system no longer carries.
+  findSlot = pkgs.writeShellScriptBin "pesmarica-find-slot"
+    (builtins.readFile ../scripts/find_slot.sh);
+
+  # Where the initrd puts a symlink to the slot's rootfs.img, and what the
+  # store's mount unit is told to loop-mount. A path in the initrd's own root:
+  # it has to be one string in the closure, and every path on the card has a
+  # slot in it.
+  storeImage = "/pesmarica-store.img";
+  # The initrd mounts the system's filesystems under /sysroot, so that is the
+  # unit this has to run before.
+  storeMount = "${utils.escapeSystemdPath "/sysroot/nix/.ro-store"}.mount";
 
   # What "this system works" means, and it is deliberately the whole stack: the
   # web server only answers once the store mounted, the songbook loaded and Dart
@@ -400,13 +414,12 @@ in
   # rather than mkForce: it wins, and a consumer with a reason can still get
   # past it.
   boot.loader.raspberry-pi.bootloader = lib.mkOverride 60 "kernel";
-  # The slot is the folder name, and it is baked into this system: os_prefix
-  # in config.txt, the tree the firmware populates, and the fstab line below
-  # all come from it. Building the other slot is one option away
-  # (pesmarica.slot = "b"), and a running box reports its own in
-  # /etc/pesmarica-slot so a deploy knows which one is free.
-  boot.loader.raspberry-pi.nixosGenerationsDir = "nixos-${config.pesmarica.slot}";
-  environment.etc."pesmarica-slot".text = config.pesmarica.slot + "\n";
+  # Nothing here names a slot, and that is the point: this system is built once
+  # and the same bytes land in nixos-a or nixos-b. The folder name comes from
+  # upstream's default ("nixos"); image.nix renames the tree to nixos-a for the
+  # card it ships, and a deploy or an update unpacks the payload into whichever
+  # slot the box is not running. Which one that is, is worked out at boot --
+  # see nix/scripts/find_slot.sh and the initrd service below.
   # Reboot through sysrq. Asking the kernel to shut down cleanly means tearing
   # down a loop device whose backing file is the store every process is
   # executing from, and it does not come back from that -- the box sat at
@@ -640,16 +653,44 @@ in
       "x-systemd.device-timeout=30s"
     ];
   };
-  # The device is named by its path *in the initrd*, where the boot partition
-  # sits under /sysroot -- and systemd orders this after that mount from the
-  # path alone. The same line lands in the final /etc/fstab, where it is
-  # already mounted and never looked at again. The slot in the path is why a
-  # system can only ever boot from the slot it was built for.
+  # A path in the initrd's own root rather than the card, because the card path
+  # carries the slot and this system does not know its slot -- pesmarica-store
+  # below points this at the right rootfs.img once the boot partition is up.
+  # The same line lands in the final /etc/fstab, where it is already mounted and
+  # never looked at again; the path it names is gone by then either way, which
+  # was true of the /sysroot one it replaces too.
   fileSystems."/nix/.ro-store" = {
-    device = "/sysroot/boot/firmware/${config.boot.loader.raspberry-pi.nixosGenerationsDir}/default/rootfs.img";
+    device = storeImage;
     fsType = "squashfs";
     options = [ "loop" "threads=multi" ];
     neededForBoot = true;
+  };
+  # Which slot did the firmware boot? Its cmdline names this system's store
+  # path and each slot says which system it holds, so the answer is on the card
+  # the firmware just read from -- no marker, nothing written, and right on a
+  # trial boot where config.txt still names the slot we came from.
+  #
+  # Ordered by hand rather than through the mount's device path: systemd only
+  # infers "after the boot partition" when the device *is* on it, and this one
+  # deliberately is not.
+  boot.initrd.systemd.services.pesmarica-store = {
+    description = "Point the store at the slot this box booted from";
+    unitConfig = {
+      DefaultDependencies = false;
+      RequiresMountsFor = "/sysroot/boot/firmware";
+    };
+    before = [ storeMount "shutdown.target" ];
+    requiredBy = [ storeMount ];
+    conflicts = [ "shutdown.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      slot=$(FIRMWARE=/sysroot/boot/firmware ${findSlot}/bin/pesmarica-find-slot)
+      ${pkgs.coreutils}/bin/ln -sf \
+        "/sysroot/boot/firmware/nixos-$slot/default/rootfs.img" ${storeImage}
+    '';
   };
   fileSystems."/nix/store" = {
     device = "/nix/.ro-store";
@@ -748,6 +789,10 @@ in
   # on a card that has to hold a songbook, and none of it is reachable from the
   # screen or the web interface.
   environment.defaultPackages = lib.mkForce [ ];
+  # The exception, and it is the deploy's: tool/deploy_system.sh asks the box
+  # over ssh which slot it runs before it sends anything, so this one has to be
+  # on root's PATH rather than only in a unit's.
+  environment.systemPackages = [ findSlot ];
   programs.command-not-found.enable = false;
   # Flutter carries its own text stack and the fonts are inside the bundle, so
   # nothing on this box asks fontconfig anything.
@@ -980,11 +1025,11 @@ in
     path = [ pkgs.coreutils pkgs.gnugrep pkgs.gnused pkgs.jq ];
     serviceConfig.Type = "oneshot";
     script = ''
-      running=$(tr -d '[:space:]' < /etc/pesmarica-slot)
+      running=$(${findSlot}/bin/pesmarica-find-slot)
       case "$running" in
         a) free=b ;;
         b) free=a ;;
-        *) echo "pesmarica: this system does not say which slot it runs" >&2; exit 1 ;;
+        *) echo "pesmarica: cannot tell which slot this box booted from" >&2; exit 1 ;;
       esac
 
       # The free slot can also hold the system this box was updated *from*, a
@@ -1036,7 +1081,7 @@ in
       TimeoutStartSec = "5min";
       Environment = [
         "FIRMWARE=/boot/firmware"
-        "SLOT_FILE=/etc/pesmarica-slot"
+        "FIND_SLOT=${findSlot}/bin/pesmarica-find-slot"
         "SWITCH=${systemSwitch}/bin/pesmarica-system-switch"
         "REBOOT=${trybootReboot}/bin/pesmarica-tryboot-reboot"
         "PROBE=${trybootProbe}"

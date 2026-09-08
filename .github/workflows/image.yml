@@ -129,13 +129,12 @@ jobs:
             --extra-trusted-public-keys nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI= \
             --out-link result
 
-          # Both slots as bare payloads, for tool/deploy_system.sh RELEASE=...:
-          # a box running slot a takes b and vice versa, so a release has to
-          # carry both. Slot a is already built as part of the image; b differs
-          # by one string and rebuilds only the parts that carry it.
-          for s in a b; do
-            nix build "path:$PWD#firmware-$s" --out-link "fw-$s"
-          done
+          # The boot partition on its own, for tool/deploy_system.sh RELEASE=...
+          # and for the box's own updater. One payload, not one per slot: a
+          # system no longer knows which slot it lives in, so the same tree
+          # lands in whichever one the box is not running. It is already built
+          # as part of the image, so this is a link and nothing else.
+          nix build "path:$PWD#firmware" --out-link fw
 
           # cachix-action pushes what the build produced when it is configured.
 
@@ -183,9 +182,7 @@ jobs:
           else
             out="$name.zst"; zstd -T0 -12 -c "$img" > "../out/$out"
           fi
-          for s in a b; do
-            tar -C "fw-$s/nixos-$s" -cf - default | zstd -T0 -12 > "../out/pesmarica-system-$s-${GITHUB_SHA::7}.tar.zst"
-          done
+          tar -C fw/nixos -cf - default | zstd -T0 -12 > "../out/pesmarica-system-${GITHUB_SHA::7}.tar.zst"
           cd ../out && ls -lh && for f in "$out" pesmarica-system-*.tar.zst; do sha256sum "$f" > "$f.sha256"; done
 
       - uses: actions/upload-artifact@v7
