@@ -692,6 +692,18 @@ in
         "/sysroot/boot/firmware/nixos-$slot/default/rootfs.img" ${storeImage}
     '';
   };
+  # Everything the script above calls, named again. The initrd copies the store
+  # paths it is given and does not read the scripts among them, so a binary that
+  # is only ever mentioned inside one is simply not there at boot -- the service
+  # exits 127, the mount that requires it fails, and the box stops in the initrd
+  # with a few unit lines on the screen. That is what v13 did. Upstream lists
+  # every binary its own initrd scripts use for exactly this reason;
+  # tool/check_initrd_deps.sh now checks the built initrd rather than trusting
+  # anyone to remember.
+  boot.initrd.systemd.storePaths = [
+    "${findSlot}/bin/pesmarica-find-slot"
+    "${pkgs.coreutils}/bin/ln"
+  ];
   fileSystems."/nix/store" = {
     device = "/nix/.ro-store";
     fsType = "none";
