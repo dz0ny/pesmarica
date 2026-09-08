@@ -306,6 +306,18 @@ IPv6 link-local address (`ping6 ff02::1%<wifi if>` finds it) as `root` with the
 image's initial password; a fresh image has no keys. Each login takes a minute
 and a half while sshd waits on a reverse lookup the box cannot do.
 
+**dnsmasq must not be told to bind an address that does not exist yet.** It is
+the access point's DHCP server, and it is ordered after `network.target`, which
+only means networkd started -- not that hostapd brought `wlan0` up or that
+`192.168.4.1` is on it. With `bind-interfaces` it demanded that address at
+startup, exited without it, and the default start limit stopped it after five
+goes: an access point with no leases, for the rest of the boot. It uses
+`bind-dynamic` now, which binds interfaces as they appear, with `interface=`
+still keeping it off every other link, and the unit has no start limit so it
+cannot give up permanently. Anything new on the AP path has the same shape of
+problem -- the address arrives late, and ordering against `network.target` does
+not help.
+
 **The access point is the only way into the box, and the app no longer touches
 it.** `hostapd.conf` lives on the data partition beside the songbook, which is
 FAT32 precisely so a laptop can edit it, and it ships in the image so the

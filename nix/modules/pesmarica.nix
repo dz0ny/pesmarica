@@ -534,7 +534,17 @@ in
   # the box is a guest, and a guest that answers every name is a nuisance.
   systemd.services.dnsmasq = {
     after = [ "pesmarica-boot-config.service" ];
-    unitConfig.ConditionPathExists = "!${clientMarker}";
+    unitConfig = {
+      ConditionPathExists = "!${clientMarker}";
+      # Never give up on it. Upstream's unit restarts on failure, and systemd's
+      # default start limit -- five goes in ten seconds -- then stops it for the
+      # rest of the boot. That is the wrong trade for the one service that makes
+      # the access point usable: a box whose dnsmasq stopped hands out no leases
+      # until somebody power-cycles it, in a hall, mid-service. Retrying every
+      # five seconds forever costs nothing and recovers on its own.
+      StartLimitIntervalSec = 0;
+    };
+    serviceConfig.RestartSec = "5s";
   };
 
   services.dnsmasq = {
@@ -544,9 +554,23 @@ in
       port = 53;
       no-resolv = true;
       no-hosts = true;
-      bind-interfaces = true;
+      # bind-dynamic, not bind-interfaces. The two differ in what happens when
+      # wlan0 does not have ${apAddress} yet: bind-interfaces demands the
+      # address at startup and exits when it is missing, and it is missing for
+      # most of a boot -- the unit is only ordered after network.target, which
+      # means networkd has *started*, not that hostapd has brought the link up
+      # and networkd has put an address on it. dnsmasq lost that race every
+      # time, failed five times and was stopped by the start limit, so the
+      # access point handed out no leases at all. bind-dynamic is dnsmasq's own
+      # answer to interfaces that come and go: it binds them as they appear.
+      #
+      # interface= is what keeps it off every other link, which is the point of
+      # the condition above -- on someone else's network the box is a guest,
+      # and a guest that answers every name is a nuisance. listen-address is
+      # gone with bind-interfaces: naming an address that does not exist yet is
+      # the failure being fixed, and wlan0 has no other.
+      bind-dynamic = true;
       interface = "wlan0";
-      listen-address = apAddress;
       # Every name resolves to the box. There is no uplink to forward to, and it
       # is what makes a phone pop the captive-portal sheet open on the songbook
       # instead of sitting on "no internet".
