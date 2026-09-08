@@ -55,6 +55,28 @@ diskutil list                    # find the card
 make flash DISK=/dev/rdisk4      # note the r: raw device, much faster
 ```
 
+To write a published release instead of a local build, stream it -- nothing
+needs to land on the disk on the way:
+
+```bash
+sudo -v && diskutil unmountDisk /dev/rdisk4
+```
+
+```bash
+curl -fL "$(gh release view v13 --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | sudo dd of=/dev/rdisk4 bs=4m
+```
+
+```bash
+sync && diskutil eject /dev/rdisk4
+```
+
+`.url`, not `browser_download_url` -- that is the REST API's field name and
+`gh release view --json assets` does not carry it, so asking for it yields a
+blank argument and an `xz` error that looks like a corrupt download. BSD `dd`
+has no `status=progress`; curl keeps its own meter when stdout is a pipe, and
+the card being slower than the connection is what makes it track the write.
+[../README.md](../README.md#straight-from-a-release) has the longer version.
+
 ## The access point
 
 The box never joins a network — there is rarely one to join in the rooms this

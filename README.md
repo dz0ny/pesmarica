@@ -108,7 +108,7 @@ diskutil unmountDisk /dev/rdisk4
 ```
 
 ```bash
-zstd -dc pesmarica-*.img.zst | sudo dd of=/dev/rdisk4 bs=4m status=progress
+zstd -dc pesmarica-*.img.zst | sudo dd of=/dev/rdisk4 bs=4m
 ```
 
 A published release carries the same image as `.img.xz` instead -- that one is
@@ -118,6 +118,49 @@ build is not. Swap `zstd -dc` for `xz -dc` and the rest is the same.
 Note the `r` in `rdisk4`: the raw device is several times faster. `make flash`
 does the same three steps -- unmount, write, eject -- for an image you built
 locally.
+
+### Straight from a release
+
+There is no reason for the image to touch the disk on the way. `gh` resolves
+the asset, `curl` streams it, `xz` decompresses it and `dd` writes it, and the
+card is the only thing that ends up holding two gigabytes:
+
+```bash
+sudo -v && diskutil unmountDisk /dev/rdisk4
+```
+
+```bash
+curl -fL "$(gh release view v13 --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | sudo dd of=/dev/rdisk4 bs=4m
+```
+
+```bash
+sync && diskutil eject /dev/rdisk4
+```
+
+The field is `.url`, not `browser_download_url`: that is the REST API's name
+for it, and `gh release view --json assets` does not have it. Ask for a field
+that is not there and jq returns nothing, `curl` is handed a blank argument,
+and `xz` reports a file format it cannot recognise -- which reads like a
+corrupt download rather than a typo three commands upstream.
+
+`sudo -v` first so the password prompt does not land in the middle of the
+progress meter, and unmount first or `dd` stops at `Resource busy`.
+
+**Progress.** BSD `dd` has no `status=progress` -- that is GNU, and passing it
+here is an error, not a no-op. Press **Ctrl-T** for a position line, or leave
+curl unsilenced: it keeps its meter when stdout is a pipe, and because the card
+is slower than the connection, the download stalls at the card's pace and the
+percentage tracks the write. For a bar on the write side instead,
+`brew install pv` and put it after the decompressor:
+
+```bash
+curl -sfL "$(gh release view v13 --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | pv -s 2400m | sudo dd of=/dev/rdisk4 bs=4m
+```
+
+`-s` is an estimate, not a measured size: the image is an 8 MiB gap, a firmware
+partition sized at twice its contents, and a 512 MiB songbook, which lands near
+2.34 GiB. Running past 100% at the end is the estimate being low, not a bad
+write.
 
 To build it yourself instead:
 
