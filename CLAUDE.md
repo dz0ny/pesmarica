@@ -145,6 +145,17 @@ argument attached. `tool/test_tryboot.sh` pins all of it, including that the
 attempt count goes up *before* the restart -- the other order is a loop with no
 end.
 
+**Ask the box's units where its helpers are, not its PATH.** The switch helpers
+are referenced by store path from the units and were on no PATH at all, so
+`tool/deploy_system.sh` -- which probed `command -v pesmarica-tryboot-reboot`
+to decide whether a box could roll back -- concluded that every box predated
+trial boots and switched permanently, with the net it had just built sitting
+unused. It reads `systemctl show pesmarica-tryboot.service -p Environment` now
+and uses the path from there, which works on a box that has not been updated
+yet; that is the only way to fix the ones already in the field. They are also
+in `environment.systemPackages` now, because a box whose switch helpers can
+only be reached by store path is one nobody can recover by hand either.
+
 **The initrd carries store paths, not closures.** A service under
 `boot.initrd.systemd.services` gets its script copied in, and nothing reads
 that script: a binary it calls is only there if it is *also* named in

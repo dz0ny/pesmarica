@@ -156,7 +156,18 @@ rm -f "$onbox" "$inbuild"
 # Can this box roll back by itself? The helper that sets the firmware's tryboot
 # flag arrived with the trial-boot work; a box on an older image has no way to
 # arm one, and pointing config.txt straight at the new slot is all there is.
-if ssh "$HOST" "command -v pesmarica-tryboot-reboot" >/dev/null 2>&1; then
+#
+# Ask the box's own unit for the path rather than looking for the helper on
+# PATH. The image never put it there -- it is referenced by store path from the
+# units and nowhere else -- so `command -v` answered "no" on every box that
+# *did* have trial boots, and every deploy switched permanently with the net it
+# had just built sitting unused. The tryboot unit has recorded the path in its
+# environment since trial boots existed, so this reads correctly on a box that
+# has not been updated yet, which is the only way to fix the ones already out
+# there.
+REBOOT_BIN="$(ssh "$HOST" "systemctl show pesmarica-tryboot.service -p Environment --value 2>/dev/null" |
+	tr ' ' '\n' | sed -n 's/^REBOOT=//p' | head -1)"
+if [ -n "$REBOOT_BIN" ]; then
 	TRIAL=1
 else
 	TRIAL=""
@@ -188,7 +199,7 @@ echo "==> rebooting $HOST"
 # With a trial the restart has to carry the tryboot flag, which rides on the
 # reboot syscall's argument -- sysrq cannot, so the helper on the box does it.
 if [ -n "$TRIAL" ]; then
-	ssh "$HOST" "pesmarica-tryboot-reboot" || true
+	ssh "$HOST" "$REBOOT_BIN" || true
 else
 	ssh "$HOST" "sync; echo s > /proc/sysrq-trigger; sleep 1; echo b > /proc/sysrq-trigger" || true
 fi
