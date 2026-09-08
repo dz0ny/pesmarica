@@ -89,6 +89,16 @@ Instead:
 | systemd-networkd | the address `192.168.4.1/24` and the DHCP pool |
 | dnsmasq | every name resolves to the box, so phones open the captive-portal sheet on the songbook |
 
+dnsmasq uses `bind-dynamic`, not `bind-interfaces`. The difference is what
+happens before `wlan0` has `192.168.4.1` on it: `bind-interfaces` wants the
+address at startup and exits without it, and the unit is only ordered after
+`network.target` -- which means networkd has *started*, not that hostapd has
+brought the link up and an address has landed. dnsmasq lost that race on every
+boot, failed five times, and systemd's start limit then stopped it for good, so
+the access point handed out no leases at all. The unit also has no start limit
+now and retries every five seconds: a box whose DHCP server has given up is a
+box nobody can reach, in a hall, mid-service.
+
 The web interface rewrites `hostapd.conf` and restarts hostapd. Because that is
 the only way into the box, `pesmarica-ap-preflight` validates the file first and
 restores the shipped default if it cannot work — a bad SSID typed into a phone
