@@ -825,10 +825,15 @@ in
   # on a card that has to hold a songbook, and none of it is reachable from the
   # screen or the web interface.
   environment.defaultPackages = lib.mkForce [ ];
-  # The exception, and it is the deploy's: tool/deploy_system.sh asks the box
-  # over ssh which slot it runs before it sends anything, so this one has to be
-  # on root's PATH rather than only in a unit's.
-  environment.systemPackages = [ findSlot ];
+  # The exception, and it is the deploy's and the recovery's: everything here is
+  # reached over ssh by a person or by tool/deploy_system.sh, so it has to be on
+  # root's PATH rather than only in a unit's. That was not true of the two
+  # switch helpers until now, and it cost the trial boot its whole purpose on
+  # the deploy path -- the deploy looked for the reboot helper with `command -v`
+  # and concluded every box predated trial boots. The deploy no longer asks
+  # PATH, but a box where these can only be reached by store path is a box
+  # nobody can switch by hand at a console either.
+  environment.systemPackages = [ findSlot systemSwitch trybootReboot ];
   programs.command-not-found.enable = false;
   # Flutter carries its own text stack and the fonts are inside the bundle, so
   # nothing on this box asks fontconfig anything.
