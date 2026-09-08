@@ -130,7 +130,7 @@ sudo -v && diskutil unmountDisk /dev/rdisk4
 ```
 
 ```bash
-curl -fL "$(gh release view v13 --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | sudo dd of=/dev/rdisk4 bs=4m
+curl -fL "$(gh release view --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | sudo dd of=/dev/rdisk4 bs=4m
 ```
 
 ```bash
@@ -154,7 +154,7 @@ percentage tracks the write. For a bar on the write side instead,
 `brew install pv` and put it after the decompressor:
 
 ```bash
-curl -sfL "$(gh release view v13 --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | pv -s 2400m | sudo dd of=/dev/rdisk4 bs=4m
+curl -sfL "$(gh release view --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | pv -s 2400m | sudo dd of=/dev/rdisk4 bs=4m
 ```
 
 `-s` is an estimate, not a measured size: the image is an 8 MiB gap, a firmware
@@ -585,6 +585,12 @@ against stub files, so none needs a Pi:
 ```bash
 ./tool/test_find_slot.sh && ./tool/test_system_switch.sh && ./tool/test_tryboot.sh && ./tool/test_update_check.sh && ./tool/test_boot_config.sh
 ```
+
+One more cannot run against a stub. `./tool/check_initrd_deps.sh <initrd>`
+unpacks a built initrd and checks that every store path its own scripts name is
+present -- the initrd copies the paths it is given and never reads them, so a
+binary a service calls is missing at boot and nowhere else. It needs an initrd,
+which needs an aarch64 builder, so CI runs it right after the image build.
 
 The web interface is served from `assets/web/` through the Flutter asset bundle,
 so editing anything in it needs a restart (a hot restart is enough) to be picked
