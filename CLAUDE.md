@@ -347,7 +347,19 @@ partition with a card reader; `pesmarica-boot-log.service` then writes this
 boot's journal to `boot.log` on the songbook partition, keeping the previous
 one as `boot.log.1`. It is a transcript, not a journal directory: the
 partition is FAT and carries neither the permissions nor the ACLs journald
-wants.
+wants. It also stops where the kernel last flushed, and FAT has no journal, so
+pulling the power drops the tail -- one boot left six seconds of a run that
+lasted minutes, and the answer was past the cut. `sync` before the plug comes
+out, or read the screen.
+
+**A card is evidence, and reading one beats another boot.** Mount it and the
+whole boot path is inspectable without the box: `config.txt` says which slot
+the firmware will load, `nixos-<slot>/default/` should hold `kernel.img`,
+`initrd`, `cmdline.txt`, `system-link` and `rootfs.img`, and `system-link` must
+equal the `init=` in `cmdline.txt` -- `nix/scripts/find_slot.sh` runs against
+the mounted partition and says so. Unpacking `initrd` and checking what its own
+scripts call is what found v13 in minutes after a screen photograph had only
+narrowed it to "the initrd"; `tool/check_initrd_deps.sh` is that check, kept.
 
 **The board has no clock.** There is no RTC, so the box boots at whatever the
 build stamped and drifts; `date` on a running box is not evidence of anything,
