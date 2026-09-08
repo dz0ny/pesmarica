@@ -318,6 +318,50 @@ let
     (builtins.readFile ../scripts/system_switch.sh);
   updateCheck = pkgs.writeShellScriptBin "pesmarica-update-check"
     (builtins.readFile ../scripts/update_check.sh);
+  trybootDecide = pkgs.writeShellScriptBin "pesmarica-tryboot"
+    (builtins.readFile ../scripts/tryboot.sh);
+
+  # What "this system works" means, and it is deliberately the whole stack: the
+  # web server only answers once the store mounted, the songbook loaded and Dart
+  # is running. Two minutes, because a cold boot on a Zero 2 W with a squashfs
+  # on an SD card is not quick, and promoting late costs nothing while promoting
+  # a system that never came up costs a card reader.
+  trybootProbe = pkgs.writeShellScript "pesmarica-tryboot-probe" ''
+    port=$(${pkgs.jq}/bin/jq -r '.httpPort // 80' /var/lib/pesmarica/settings.json 2>/dev/null || echo 80)
+    for _ in $(seq 1 60); do
+      # /api/remote rather than /api/state: it is open, so this says nothing
+      # about whether a password happens to be set.
+      ${pkgs.curl}/bin/curl -fsS -o /dev/null "http://127.0.0.1:$port/api/remote" && exit 0
+      sleep 2
+    done
+    exit 1
+  '';
+
+  # Restart with the firmware's tryboot flag set, and nothing else.
+  #
+  # The flag rides on the reboot syscall's argument, which is why this exists at
+  # all: `echo b > /proc/sysrq-trigger` restarts the board but carries no
+  # argument, and asking systemd to reboot cleanly wedges this box -- it tears
+  # down the loop device holding the store every process is executing from. So:
+  # the same immediate restart sysrq does, with the argument attached, after a
+  # sync of its own because nothing else is going to flush the FAT partitions.
+  #
+  # glibc's reboot(3) takes no argument, hence the raw syscall.
+  trybootReboot = pkgs.writeCBin "pesmarica-tryboot-reboot" ''
+    #include <linux/reboot.h>
+    #include <stdio.h>
+    #include <sys/syscall.h>
+    #include <unistd.h>
+
+    int main(void) {
+      sync();
+      syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
+              LINUX_REBOOT_CMD_RESTART2, "0 tryboot");
+      /* Only reached if the kernel refused it, which is a bug worth seeing. */
+      perror("pesmarica-tryboot-reboot");
+      return 1;
+    }
+  '';
 in
 {
   system.stateVersion = "26.05";
@@ -954,16 +998,51 @@ in
         exit 1
       fi
 
-      ${systemSwitch}/bin/pesmarica-system-switch "$free"
+      # Armed, not switched: config.txt keeps naming the slot that works, and
+      # the firmware loads tryboot.txt for exactly one boot. If the new system
+      # does not come up, the next restart lands back here on its own.
+      ${systemSwitch}/bin/pesmarica-system-switch --try "$free"
+      printf 'slot=%s\nattempts=1\n' "$free" > /boot/firmware/tryboot.state.tmp
+      mv /boot/firmware/tryboot.state.tmp /boot/firmware/tryboot.state
 
-      # sync, then restart through sysrq -- see boot.kernel.sysctl above. A
-      # clean shutdown tears down the loop device the store is executing from
-      # and does not come back from it.
-      sync
-      echo s > /proc/sysrq-trigger
-      sleep 1
-      echo b > /proc/sysrq-trigger
+      # Restart with the flag set. Not sysrq: that carries no argument, and the
+      # argument is the whole point. The helper syncs and restarts immediately,
+      # as sysrq does -- a clean shutdown tears down the loop device the store
+      # is executing from and does not come back from it.
+      ${trybootReboot}/bin/pesmarica-tryboot-reboot
     '';
+  };
+
+  # One decision per boot: promote a trial that worked, or try again a staged
+  # update that did not. Both directions live in one script because the box
+  # works out which situation it is in from two files -- see nix/scripts/
+  # tryboot.sh -- and splitting them across two units would only invent an
+  # ordering problem.
+  #
+  # After the app, not after multi-user.target: the probe waits for the app to
+  # answer, and starting the wait before the app has been asked to start would
+  # spend the first of its two minutes on nothing.
+  systemd.services.pesmarica-tryboot = {
+    description = "Confirm a trial boot, or try a staged update again";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "pesmarica.service" ];
+    unitConfig.RequiresMountsFor = [ "/boot/firmware" "/var/lib/pesmarica" ];
+    serviceConfig = {
+      Type = "oneshot";
+      # Long enough for the probe to give up on its own. Without this systemd
+      # would kill the wait at 90 seconds and a slow but healthy boot would
+      # never be promoted -- which is the failure that looks like the update
+      # silently not sticking.
+      TimeoutStartSec = "5min";
+      Environment = [
+        "FIRMWARE=/boot/firmware"
+        "SLOT_FILE=/etc/pesmarica-slot"
+        "SWITCH=${systemSwitch}/bin/pesmarica-system-switch"
+        "REBOOT=${trybootReboot}/bin/pesmarica-tryboot-reboot"
+        "PROBE=${trybootProbe}"
+      ];
+      ExecStart = "${trybootDecide}/bin/pesmarica-tryboot";
+    };
   };
 
   systemd.services.pesmarica = {

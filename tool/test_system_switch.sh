@@ -24,6 +24,7 @@ fixture() { # fixture <dir>
 	done
 }
 switch() { FIRMWARE="$1" bash "$SWITCH" "$2" >/dev/null 2>&1; }
+arm() { FIRMWARE="$1" bash "$SWITCH" --try "$2" >/dev/null 2>&1; }
 prefix() { grep '^os_prefix=' "$1/config.txt"; }
 
 d="$(mktemp -d)"; fixture "$d"
@@ -52,5 +53,39 @@ if switch "$d" b; then no "refuses a config.txt with no os_prefix"; else ok "ref
 
 d="$(mktemp -d)"; fixture "$d"; switch "$d" b; switch "$d" a
 [ "$(prefix "$d")" = "os_prefix=nixos-a/default/" ] && ok "switching back works" || no "switching back works"; rm -rf "$d"
+
+
+# --- the trial boot ---------------------------------------------------------
+# The firmware loads tryboot.txt instead of config.txt for exactly one boot,
+# and clears the flag before it starts. So arming must not touch config.txt:
+# the whole rollback is that the box already knows where to go back to.
+
+d="$(mktemp -d)"; fixture "$d"
+if arm "$d" b; then ok "a complete slot can be armed for a trial boot"; else no "a complete slot can be armed for a trial boot"; fi
+[ "$(prefix "$d")" = "os_prefix=nixos-a/default/" ] && ok "arming leaves config.txt on the working slot" || no "arming leaves config.txt on the working slot"
+[ "$(grep '^os_prefix=' "$d/tryboot.txt")" = "os_prefix=nixos-b/default/" ] && ok "tryboot.txt names the slot being tried" || no "tryboot.txt names the slot being tried"
+[ "$(grep -c . "$d/tryboot.txt")" -eq 3 ] && ok "tryboot.txt keeps every other firmware line" || no "tryboot.txt keeps every other firmware line"
+[ ! -e "$d/tryboot.txt.tmp" ] && ok "no temp file left behind by arming" || no "no temp file left behind by arming"
+rm -rf "$d"
+
+# An armed slot that turns out to be half-written must be refused for the same
+# reasons a permanent switch is: the flag would boot it once and the box would
+# come up with no kernel, which looks exactly like a dead box.
+for missing in .complete kernel.img initrd rootfs.img; do
+	d="$(mktemp -d)"; fixture "$d"; rm -f "$d/nixos-b/default/$missing"
+	if arm "$d" b; then no "refuses to arm a slot with no $missing"; else ok "refuses to arm a slot with no $missing"; fi
+	[ ! -e "$d/tryboot.txt" ] && ok "and writes no tryboot.txt ($missing)" || no "and writes no tryboot.txt ($missing)"
+	rm -rf "$d"
+done
+
+# Promoting a trial to permanent takes the trial file away with it. A stale one
+# would be picked up by the next tryboot flag anybody sets, months later,
+# pointing at whatever was being tried at the time.
+d="$(mktemp -d)"; fixture "$d"
+arm "$d" b
+switch "$d" b
+[ ! -e "$d/tryboot.txt" ] && ok "a permanent switch clears the trial file" || no "a permanent switch clears the trial file"
+[ "$(prefix "$d")" = "os_prefix=nixos-b/default/" ] && ok "and config.txt names the promoted slot" || no "and config.txt names the promoted slot"
+rm -rf "$d"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"; [ "$fail" -eq 0 ]
