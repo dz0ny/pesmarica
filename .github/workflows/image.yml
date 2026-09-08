@@ -138,6 +138,17 @@ jobs:
 
           # cachix-action pushes what the build produced when it is configured.
 
+      # The one check that cannot run on a laptop: it needs a built initrd, and
+      # building one needs this runner. v13 shipped an initrd whose own service
+      # called a binary that was not in it -- the box stopped in the initrd with
+      # a few unit lines on screen, and nothing before this point had any way to
+      # notice.
+      - name: Initrd dependencies
+        working-directory: nix
+        run: |
+          command -v cpio >/dev/null || sudo apt-get install -y -qq cpio
+          ../tool/check_initrd_deps.sh fw/nixos/default/initrd
+
       # Where the image's weight actually is. The toplevel is already built as
       # a dependency of the image, so this is seconds, and it is the only way
       # to tell which of mesa, the kernel's modules and the rest of the closure

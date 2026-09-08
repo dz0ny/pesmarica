@@ -145,6 +145,18 @@ argument attached. `tool/test_tryboot.sh` pins all of it, including that the
 attempt count goes up *before* the restart -- the other order is a loop with no
 end.
 
+**The initrd carries store paths, not closures.** A service under
+`boot.initrd.systemd.services` gets its script copied in, and nothing reads
+that script: a binary it calls is only there if it is *also* named in
+`boot.initrd.systemd.storePaths`. Miss that and the failure is invisible until
+a card is in a box -- the service exits 127, the mount that `Requires=` it
+fails, `initrd-fs.target` fails, and the screen shows a few unit lines and then
+nothing. v13 shipped precisely that and cost a card reader trip. Upstream lists
+every binary its own initrd scripts use for this reason;
+`tool/check_initrd_deps.sh` now unpacks the built initrd and checks, and CI
+runs it right after the build, because it is the one check here that needs an
+aarch64 builder rather than a stub.
+
 **A system does not know its slot, it works it out at boot.** It used to be
 baked in at build time (`pesmarica.slot`), which made the two slots two
 different systems and a release two payloads of half a gigabyte that differed
@@ -470,6 +482,8 @@ are a card reader trip if they are wrong.
 `tool/test_system_switch.sh` covers system updates: it runs
 `nix/scripts/system_switch.sh` against fake boot partitions, and every refusal it pins
 is a card reader trip that did not happen.
+`tool/check_initrd_deps.sh` is the odd one out: it takes a built initrd rather
+than a stub, so it only runs where the image is built, which is CI.
 `tool/test_find_slot.sh` covers the answer all of that rests on -- which slot
 the box is actually running -- because a system no longer knows its own, and
 getting it wrong loop-mounts the other slot's store against this kernel.
