@@ -63,7 +63,7 @@ sudo -v && diskutil unmountDisk /dev/rdisk4
 ```
 
 ```bash
-curl -fL "$(gh release view v13 --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | sudo dd of=/dev/rdisk4 bs=4m
+curl -fL "$(gh release view --json assets -q '.assets[]|select(.name|endswith(".img.xz")).url')" | xz -dc | sudo dd of=/dev/rdisk4 bs=4m
 ```
 
 ```bash
@@ -141,6 +141,10 @@ either answer boots the same bytes, and `config.txt` breaks the tie.
 
 `system-link` is therefore load-bearing: a slot without one mounts nothing, so
 the switch, the updater and the deploy all refuse a payload that is missing it.
+The other half of that machinery -- `pesmarica-store.service`, which turns the
+answer into the symlink the store is loop-mounted from -- runs in the initrd,
+where a missing binary is invisible until a card is in a box. See the first of
+the sharp edges below before adding anything to it.
 
 `scripts/update_check.sh` is the deploy without the laptop:
 `pesmarica-update-check.service`, on an hourly timer, asks GitHub for the
@@ -235,6 +239,21 @@ silently breaking D-Bus and networkd -- so the image ships an empty one for it
 to fill at boot.
 
 ## Known sharp edges
+
+- **The initrd carries store paths, not closures.** A service under
+  `boot.initrd.systemd.services` gets its script copied in, and nothing reads
+  that script: a binary the script calls is only in the initrd if it is *also*
+  named in `boot.initrd.systemd.storePaths`. Nothing fails at build time, so
+  the first sign is a box on a shelf -- the service exits 127, the mount that
+  `Requires=` it fails, `initrd-fs.target` fails, and the screen shows a few
+  unit lines and then nothing. v13 shipped exactly that: of the initrd's 106
+  store entries the only missing one was `pesmarica-find-slot`, which
+  `pesmarica-store.service` calls. Upstream names every binary its own initrd
+  scripts use for this reason. `../tool/check_initrd_deps.sh` unpacks a built
+  initrd, reads every `unit-script-*` in it and checks each store path it names
+  is present; CI runs it right after the build. It is the one check in this
+  repo that cannot run against a stub, because it needs an initrd and that
+  needs an aarch64 builder.
 
 - **The flake is inside a git repository, so it only sees tracked files.**
   `bundle/` and `content/` are staged by `make bundle` and gitignored, which
