@@ -4,7 +4,7 @@
 #
 #   HOST=root@pesmarica.local ./tool/deploy_system.sh            # builds locally
 #   HOST=root@pesmarica.local RELEASE=v7 ./tool/deploy_system.sh # from a release
-#   HOST=... PAYLOAD=/path/to/firmware-b ./tool/deploy_system.sh # a tree you have
+#   HOST=... PAYLOAD=/path/to/firmware ./tool/deploy_system.sh   # a tree you have
 #
 # This is how the box is updated at all: the app is in the closure, so there
 # is nothing smaller to push. Expect minutes, not seconds -- half a gigabyte
@@ -15,11 +15,12 @@
 # FETCH=local to force the old path -- the drift check below needs the Pi
 # firmware in hand, so it only runs when the payload came through here.
 #
-# The boot partition has two slots, nixos-a and nixos-b, and a system is built
-# for one of them: its fstab names its own slot, and config.txt's os_prefix
-# names the slot the firmware boots. So the deploy asks the box which slot it
-# is running, fills the other, and moves os_prefix. Nothing the running system
-# has open is touched, and the previous system stays whole in its slot.
+# The boot partition has two slots, nixos-a and nixos-b, and the same system
+# fits either: config.txt's os_prefix names the slot the firmware boots, and the
+# system works out at boot which slot it was loaded from. So the deploy asks the
+# box which slot it is running, fills the other, and moves os_prefix. Nothing
+# the running system has open is touched, and the previous system stays whole
+# in its slot.
 #
 # There is no automatic rollback: the Pi firmware picks the kernel before
 # anything of ours runs. If the new system does not come up, the way back is
@@ -39,8 +40,9 @@ FIRMWARE="${FIRMWARE:-/boot/firmware}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-# Which slot is free. The box says which it is running; the image ships a.
-RUNNING="$(ssh "$HOST" "cat /etc/pesmarica-slot 2>/dev/null | tr -d '[:space:]'" || true)"
+# Which slot is free. The box works out which it is running from what the
+# firmware loaded; a box on an older image has it baked into a file instead.
+RUNNING="$(ssh "$HOST" "pesmarica-find-slot 2>/dev/null || cat /etc/pesmarica-slot 2>/dev/null" | tr -d '[:space:]' || true)"
 case "$RUNNING" in
 	a) SLOT=b ;;
 	b) SLOT=a ;;
@@ -66,27 +68,27 @@ if [ -n "$BOXFETCH" ]; then
 	# at the unpacked tree: nearly all of it is rootfs.img, which is a zstd
 	# squashfs already and so barely shrinks again inside the tarball.
 	read -r ASSET SIZE < <(gh release view "$RELEASE" \
-		--json assets --jq "[.assets[] | select(.name | startswith(\"pesmarica-system-$SLOT-\") and endswith(\".tar.zst\"))][0] | \"\\(.url)\\t\\(.size)\"")
+		--json assets --jq '[.assets[] | select(.name | startswith("pesmarica-system-") and endswith(".tar.zst"))][0] | "\(.url)\t\(.size)"')
 	[ -n "${ASSET:-}" ] && [ "$ASSET" != "null" ] ||
-		{ echo "!! $RELEASE has no slot-$SLOT payload" >&2; exit 1; }
+		{ echo "!! $RELEASE has no system payload" >&2; exit 1; }
 	NEED_KB=$(( SIZE / 1024 * 5 / 4 ))
 elif [ -n "${RELEASE:-}" ]; then
 	# chmod first: the tarball carries the store's modes, so the directories
 	# come out unwritable and rm cannot empty them -- which used to leave the
 	# whole deploy exiting 1 long after it had actually landed.
 	dl="$(mktemp -d)"; trap 'chmod -R u+w "$dl" 2>/dev/null || true; rm -rf "$dl"' EXIT
-	gh release download "$RELEASE" -p "pesmarica-system-$SLOT-*.tar.zst" -D "$dl"
-	mkdir -p "$dl/tree/nixos-$SLOT"
-	zstd -dc "$dl"/pesmarica-system-"$SLOT"-*.tar.zst | tar -C "$dl/tree/nixos-$SLOT" -xf -
+	gh release download "$RELEASE" -p "pesmarica-system-*.tar.zst" -D "$dl"
+	mkdir -p "$dl/tree/nixos"
+	zstd -dc "$dl"/pesmarica-system-*.tar.zst | tar -C "$dl/tree/nixos" -xf -
 	PAYLOAD="$dl/tree"
 elif [ -z "$PAYLOAD" ]; then
-	make -C "$ROOT/nix" system SLOT="$SLOT"
-	PAYLOAD="$ROOT/nix/out/firmware-$SLOT"
+	make -C "$ROOT/nix" system
+	PAYLOAD="$ROOT/nix/out/firmware"
 fi
 VERSION="${RELEASE:-$(git -C "$ROOT" describe --always --dirty 2>/dev/null || date +%Y-%m-%d)}"
 if [ -z "$BOXFETCH" ]; then
-	SRC="$PAYLOAD/nixos-$SLOT/default"
-	[ -d "$SRC" ] || { echo "!! $SRC is not there; is PAYLOAD a slot-$SLOT firmware tree?" >&2; exit 1; }
+	SRC="$PAYLOAD/nixos/default"
+	[ -d "$SRC" ] || { echo "!! $SRC is not there; is PAYLOAD a firmware tree?" >&2; exit 1; }
 	NEED_KB="$(du -sk "$SRC" | cut -f1)"
 fi
 
@@ -119,7 +121,7 @@ if [ -n "$BOXFETCH" ]; then
 	ssh "$HOST" "set -e
 		curl -fsSL --max-time 3600 '$ASSET' | zstd -dc |
 			tar -C $FIRMWARE/nixos-$SLOT -xf - --exclude .complete --no-same-owner --no-same-permissions
-		for f in cmdline.txt initrd kernel.img rootfs.img; do
+		for f in cmdline.txt initrd kernel.img rootfs.img system-link; do
 			[ -e $FIRMWARE/nixos-$SLOT/default/\$f ] && continue
 			rm -rf $FIRMWARE/nixos-$SLOT
 			echo \"!! the payload is missing \$f; slot $SLOT emptied\" >&2

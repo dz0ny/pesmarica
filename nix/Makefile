@@ -2,7 +2,7 @@
 #
 #   make image   -> nix/out/sd-image/*.img.zst
 #   make flash DISK=/dev/rdisk4
-#   make system SLOT=b -> nix/out/firmware-b, for tool/deploy_system.sh
+#   make system  -> nix/out/firmware, for tool/deploy_system.sh
 #
 # Nix runs inside the colima VM: it is aarch64 Linux, so cache.nixos.org serves
 # prebuilt binaries for userland and nixos-raspberrypi's cache serves the Pi
@@ -51,12 +51,12 @@ image: bundle store
 	$(NIX_RUN) build .#sdImage --print-build-logs --out-link /work/out/sd-image
 	@ls -lh $(HERE)/out/sd-image/sd-image/ 2>/dev/null || ls -lh $(HERE)/out/sd-image/
 
-# The boot partition on its own, for one slot -- what tool/deploy_system.sh
-# pushes onto a running box. The card image is slot a; a box running a takes b.
-SLOT ?= a
+# The boot partition on its own -- what tool/deploy_system.sh pushes onto a
+# running box. One build for both slots: the tree under nixos/ is unpacked into
+# whichever slot the box is not running.
 system: bundle store
-	$(NIX_RUN) build .#firmware-$(SLOT) --print-build-logs --out-link /work/out/firmware-$(SLOT)
-	@du -sh $(HERE)/out/firmware-$(SLOT)/nixos-$(SLOT)/default
+	$(NIX_RUN) build .#firmware --print-build-logs --out-link /work/out/firmware
+	@du -sh $(HERE)/out/firmware/nixos/default
 
 # Stage the pieces the flake needs from outside its root.
 bundle:

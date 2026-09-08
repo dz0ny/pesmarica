@@ -2,9 +2,10 @@
 # Decides, once per boot, whether this box is on trial and whether to try again.
 #
 # There are two situations and the box can tell them apart without being told:
-# the slot it is running is baked into the system (/etc/pesmarica-slot), and the
-# slot it is *supposed* to run is one line of config.txt. When they disagree,
-# the firmware got here through tryboot.txt and this is a trial boot.
+# the slot it is running is what the firmware actually loaded this kernel out of
+# (nix/scripts/find_slot.sh), and the slot it is *supposed* to run is one line of
+# config.txt. When they disagree, the firmware got here through tryboot.txt and
+# this is a trial boot.
 #
 #   trial boot     wait for the app to actually answer, then promote the slot
 #                  into config.txt. Nothing else makes it permanent, so a
@@ -28,7 +29,7 @@
 set -euo pipefail
 
 FIRMWARE="${FIRMWARE:-/boot/firmware}"
-SLOT_FILE="${SLOT_FILE:-/etc/pesmarica-slot}"
+FIND_SLOT="${FIND_SLOT:-pesmarica-find-slot}"
 SWITCH="${SWITCH:-pesmarica-system-switch}"
 REBOOT="${REBOOT:-pesmarica-tryboot-reboot}"
 # What counts as "this system works". Anything that answers only when the app is
@@ -42,12 +43,12 @@ LIMIT="${LIMIT:-3}"
 state="$FIRMWARE/tryboot.state"
 config="$FIRMWARE/config.txt"
 
-running="$(tr -d '[:space:]' < "$SLOT_FILE" 2>/dev/null || true)"
+running="$("$FIND_SLOT" 2>/dev/null || true)"
 booted="$(sed -n 's|^os_prefix=nixos-\(.\)/default/.*|\1|p' "$config" 2>/dev/null | head -1)"
 
 case "$running" in
 	a | b) ;;
-	*) echo "pesmarica-tryboot: this system does not say which slot it runs" >&2; exit 0 ;;
+	*) echo "pesmarica-tryboot: cannot tell which slot this box booted from" >&2; exit 0 ;;
 esac
 [ -n "$booted" ] || { echo "pesmarica-tryboot: config.txt has no os_prefix" >&2; exit 0; }
 

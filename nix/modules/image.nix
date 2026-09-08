@@ -11,11 +11,12 @@
 # NixOS netboot image, with the squashfs on the card instead of inside the
 # initrd, because the closure does not fit in a Zero 2 W's RAM.
 #
-# There are two slots, nixos-a and nixos-b, and which one a system lives in
-# is baked into it at build time: the fstab names its own rootfs.img by that
-# path, and os_prefix in config.txt names the slot the firmware boots. An
-# update writes the other slot and moves os_prefix -- nothing the running
-# system has open is touched. The card ships slot a.
+# There are two slots, nixos-a and nixos-b, and the same system fits either:
+# os_prefix in config.txt names the slot the firmware boots, and the system
+# works out at boot which slot it was loaded from. An update writes the other
+# slot and moves os_prefix -- nothing the running system has open is touched.
+# The card ships slot a, which is what the rename below is for: the system is
+# built under upstream's plain "nixos" precisely so that it names no slot.
 #
 # Both partitions are populated with mtools, so this runs unprivileged: no
 # loop devices, no mounting, and the same recipe for the songbook as before.
@@ -37,10 +38,11 @@ let
   # copies this in, and `nix build .#firmware` is what tool/deploy_system.sh
   # rsyncs onto a box that is already running -- the same bytes either way, so
   # an update over ssh and a freshly flashed card land the same system.
+  gensDir = config.boot.loader.raspberry-pi.nixosGenerationsDir;
   firmware = pkgs.runCommand "pesmarica-firmware" { } ''
     mkdir -p $out
     ${config.boot.loader.raspberry-pi.firmwarePopulateCmd} -c ${toplevel} -f $out
-    cp ${rootfs} $out/${config.boot.loader.raspberry-pi.nixosGenerationsDir}/default/rootfs.img
+    cp ${rootfs} $out/${gensDir}/default/rootfs.img
   '';
 
   # What the card says it is running, for the updater to compare a release
@@ -63,12 +65,6 @@ let
   songbookClusterSectors = 8; # 4 KiB clusters: a sane FAT once this fills a card.
 in
 {
-  options.pesmarica.slot = lib.mkOption {
-    type = lib.types.enum [ "a" "b" ];
-    default = "a";
-    description = "Which of the two boot-partition slots this system is built for.";
-  };
-
   options.pesmarica.image = {
     compress = lib.mkOption {
       type = lib.types.bool;
@@ -120,12 +116,22 @@ in
 
         cp -r ${firmware} firmware
         chmod -R u+w firmware
+
+        # Into the slot the card ships. The system itself is built under the
+        # plain "${gensDir}" so that no slot is baked into it -- that is what
+        # lets a release ship one payload for both -- so the name and the
+        # os_prefix that goes with it are put on here, where a card is being
+        # written and the answer is known.
+        mv firmware/${gensDir} firmware/nixos-a
+        grep -q '^os_prefix=' firmware/config.txt ||
+          { echo "pesmarica: config.txt has no os_prefix to point at a slot" >&2; exit 1; }
+        sed -i 's|^os_prefix=.*|os_prefix=nixos-a/default/|' firmware/config.txt
+
         # The marker every slot carries once it is whole: the version in it, and
         # its presence at all, is what pesmarica-system-switch checks before
         # pointing the firmware at a slot. Without it a card could be updated
         # but never rolled back to what it was flashed with.
-        printf '%s\n' "${version}" \
-          > firmware/${config.boot.loader.raspberry-pi.nixosGenerationsDir}/default/.complete
+        printf '%s\n' "${version}" > firmware/nixos-a/default/.complete
         find firmware -exec touch --date=2000-01-01 {} +
 
         # Twice what it holds, so a second slot fits beside it one day, and a

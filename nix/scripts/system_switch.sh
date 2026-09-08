@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Points the firmware at a slot on the boot partition.
 #
-# A system lives in nixos-a/default/ or nixos-b/default/, and its slot is
-# baked into it: config.txt's os_prefix names the folder the firmware boots,
-# and the system's own fstab names the same folder for its rootfs.img. So an
-# update never touches the running slot -- it fills the other one and moves
-# os_prefix, which is one line in a plain file. Nothing that is open moves.
+# A system lives in nixos-a/default/ or nixos-b/default/, and it is the same
+# system either way: config.txt's os_prefix names the folder the firmware boots,
+# and the system works out at boot which folder that was. So an update never
+# touches the running slot -- it fills the other one and moves os_prefix, which
+# is one line in a plain file. Nothing that is open moves.
 #
 # Two ways to point it:
 #
@@ -51,7 +51,11 @@ target="$config"
 # one is a transfer cut short, and pointing the box at it costs a trip with a
 # card reader -- so check before touching anything. The marker is written last
 # by the deploy, so its presence means the transfer ran to the end.
-for f in .complete cmdline.txt initrd kernel.img rootfs.img; do
+#
+# system-link is not loaded by the firmware but is just as fatal: it names the
+# system this slot holds, and the initrd finds its own rootfs.img by matching it
+# against the cmdline it was given. Without one the slot mounts nothing.
+for f in .complete cmdline.txt initrd kernel.img rootfs.img system-link; do
 	[ -e "$slot/$f" ] || { echo "!! $slot/$f missing; refusing to switch" >&2; exit 1; }
 done
 # The board needs its device tree, and the display the vc4-kms-v3d overlay:

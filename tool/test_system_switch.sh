@@ -18,7 +18,7 @@ fixture() { # fixture <dir>
 	printf 'kernel=kernel.img\nos_prefix=nixos-a/default/\ninitramfs initrd followkernel\n' > "$d/config.txt"
 	for s in a b; do
 		mkdir -p "$d/nixos-$s/default/overlays"
-		touch "$d/nixos-$s/default"/{initrd,cmdline.txt,rootfs.img,kernel.img,.complete} \
+		touch "$d/nixos-$s/default"/{initrd,cmdline.txt,rootfs.img,kernel.img,system-link,.complete} \
 			"$d/nixos-$s/default/bcm2710-rpi-zero-2-w.dtb" \
 			"$d/nixos-$s/default/overlays/vc4-kms-v3d.dtbo"
 	done
@@ -35,7 +35,7 @@ if switch "$d" b; then ok "a complete slot is switched to"; else no "a complete 
 [ ! -e "$d/config.txt.tmp" ] && ok "no temp file left behind" || no "no temp file left behind"
 rm -rf "$d"
 
-for missing in .complete kernel.img initrd cmdline.txt rootfs.img; do
+for missing in .complete kernel.img initrd cmdline.txt rootfs.img system-link; do
 	d="$(mktemp -d)"; fixture "$d"; rm -f "$d/nixos-b/default/$missing"
 	if switch "$d" b; then no "refuses a slot with no $missing"; else ok "refuses a slot with no $missing"; fi
 	[ "$(prefix "$d")" = "os_prefix=nixos-a/default/" ] && ok "and leaves os_prefix alone ($missing)" || no "and leaves os_prefix alone ($missing)"
