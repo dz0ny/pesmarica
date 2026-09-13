@@ -191,6 +191,17 @@ syscall's argument, which sysrq cannot carry, hence `pesmarica-tryboot-reboot`.
 directions, including that the attempt count goes up *before* the restart --
 the other order is a loop with no end.
 
+`deploy_system.sh` finds the reboot helper by asking the box's own unit --
+`systemctl show pesmarica-tryboot.service -p Environment` -- rather than
+looking for it on `PATH`. It looked on `PATH` first, and the switch helpers
+were referenced by store path from the units and nowhere else, so every box
+answered "no", every deploy reported `predates trial boots`, and every switch
+was permanent with the rollback it had just armed sitting unused. Reading the
+unit works on a box that has not been updated yet, which is the only way to fix
+boxes already in the field. The helpers are in `environment.systemPackages` now
+as well: one that can only be reached by store path is one nobody can recover
+by hand at a console.
+
 The previous system stays whole in its slot throughout. If everything above
 fails, the way back is still a card reader and one line of `config.txt`:
 
@@ -247,6 +258,31 @@ editing `/etc/passwd` in place. A read-only `/etc` has one catch: systemd needs
 an `/etc/machine-id`, and with nowhere to create one it carries on without --
 silently breaking D-Bus and networkd -- so the image ships an empty one for it
 to fill at boot.
+
+## When it goes wrong
+
+The journal is in RAM, so a box that goes dark leaves nothing to read
+afterwards. The boot is deliberately not quiet -- the screen is the only
+instrument the box has, and a photograph of it has twice been the fastest way
+to a cause. For more than that, add `pesmarica.log` to `cmdline.txt` on the
+boot partition with a card reader: `pesmarica-boot-log.service` then writes
+this boot's journal to `boot.log` on the songbook partition, keeping the
+previous one as `boot.log.1`.
+
+Two limits worth knowing before you rely on it. It is a transcript, not a
+journal directory -- the partition is FAT and carries neither the permissions
+nor the ACLs journald wants. And FAT has no journal of its own, so pulling the
+power drops whatever the kernel had not flushed: one boot logged six seconds of
+a run that lasted minutes, and the answer we wanted was past the cut. Shut the
+box down with `sync` before the plug comes out, or read the screen.
+
+A card is also evidence in its own right, and reading one is often faster than
+another boot. `config.txt` says which slot the firmware will load;
+`nixos-<slot>/default/` should hold `kernel.img`, `initrd`, `cmdline.txt`,
+`system-link` and `rootfs.img`; `system-link` must match the `init=` in
+`cmdline.txt`, and `scripts/find_slot.sh` can be run against the mounted
+partition to check. Unpacking `initrd` and looking for what its own scripts
+call is what found the v13 failure -- see the first sharp edge below.
 
 ## Known sharp edges
 
